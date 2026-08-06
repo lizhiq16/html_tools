@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>色彩混合模拟器</title>
+    <style>
+        :root {
+            --bg-color: #1a1a1a;
+            --card-bg: #2a2a2a;
+            --text-color: #e0e0e0;
+            --accent-color: #4f46e5;
+            --accent-hover: #6366f1;
+            --border-color: #444;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            background-color: var(--card-bg);
+            border-radius: 16px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            padding: 30px;
+            max-width: 900px;
+            width: 100%;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .title-container {
+            flex-grow: 1;
+        }
+
+        h1 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #ffffff;
+            margin-bottom: 4px;
+        }
+
+        .subtitle {
+            font-size: 0.9rem;
+            color: #aaa;
+        }
+
+        .mode-switch {
+            display: flex;
+            background: #1e1e1e;
+            padding: 4px;
+            border-radius: 30px;
+            border: 1px solid var(--border-color);
+        }
+
+        .mode-btn {
+            padding: 8px 18px;
+            border-radius: 20px;
+            border: none;
+            background: transparent;
+            color: #aaa;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .mode-btn.active {
+            background: var(--accent-color);
+            color: white;
+            box-shadow: 0 2px 8px rgba(79, 70, 229, 0.4);
+        }
+
+        .main-content {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 30px;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .canvas-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .canvas-wrapper {
+            position: relative;
+            width: 320px;
+            height: 320px;
+            border-radius: 12px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #111111;
+            transition: background-color 0.3s ease;
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
+            border: 1px solid var(--border-color);
+        }
+
+        .color-circle {
+            width: 240px;
+            height: 240px;
+            border-radius: 50%;
+            transition: background-color 0.1s ease;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+
+        .color-hex {
+            margin-top: 15px;
+            font-family: monospace;
+            font-size: 1.1rem;
+            font-weight: bold;
+            letter-spacing: 1px;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 6px 16px;
+            border-radius: 20px;
+            border: 1px solid var(--border-color);
+        }
+
+        .controls {
+            flex: 1;
+            min-width: 300px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .control-group {
+            background: #222222;
+            padding: 15px 20px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            border: 1px solid #333;
+        }
+
+        .label {
+            font-weight: bold;
+            font-size: 1.1rem;
+            width: 70px;
+        }
+
+        .slider-container {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: #444;
+            height: 8px;
+            border-radius: 4px;
+            outline: none;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #fff;
+            cursor: pointer;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+        }
+
+        .val-display {
+            font-size: 1.1rem;
+            font-weight: bold;
+            width: 45px;
+            text-align: right;
+            font-family: monospace;
+        }
+
+        .color-block {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            transition: background-color 0.1s ease;
+        }
+
+        /* Specific styles for RGB/CMY sliders */
+        #slider1-group .label { color: #ff5555; }
+        #slider2-group .label { color: #55ff55; }
+        #slider3-group .label { color: #5588ff; }
+
+        .cmy-mode #slider1-group .label { color: #00ffff; }
+        .cmy-mode #slider2-group .label { color: #ff00ff; }
+        .cmy-mode #slider3-group .label { color: #ffff00; }
+
+        .author-info {
+            margin-top: 25px;
+            text-align: center;
+            font-size: 0.8rem;
+            color: #777;
+            border-top: 1px solid #333;
+            padding-top: 15px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container" id="app">
+    <div class="header">
+        <div class="title-container">
+            <h1 id="title">光三原色(加色)模拟</h1>
+            <div class="subtitle" id="subtitle">RGB 光学加色混合模型</div>
+        </div>
+        <div class="mode-switch">
+            <button class="mode-btn active" id="btn-rgb" onclick="switchMode('RGB')">RGB</button>
+            <button class="mode-btn" id="btn-cmy" onclick="switchMode('CMY')">CMY</button>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="canvas-container">
+            <div class="canvas-wrapper" id="canvas-bg">
+                <div class="color-circle" id="color-circle"></div>
+            </div>
+            <div class="color-hex" id="hex-display">#000000</div>
+        </div>
+
+        <div class="controls">
+            <div class="control-group" id="slider1-group">
+                <span class="label" id="label1">红 R:</span>
+                <div class="slider-container">
+                    <input type="range" id="slider1" min="0" max="255" value="0" oninput="updateColor()">
+                </div>
+                <span class="val-display" id="val1">0</span>
+                <div class="color-block" id="block1"></div>
+            </div>
+
+            <div class="control-group" id="slider2-group">
+                <span class="label" id="label2">绿 G:</span>
+                <div class="slider-container">
+                    <input type="range" id="slider2" min="0" max="255" value="0" oninput="updateColor()">
+                </div>
+                <span class="val-display" id="val2">0</span>
+                <div class="color-block" id="block2"></div>
+            </div>
+
+            <div class="control-group" id="slider3-group">
+                <span class="label" id="label3">蓝 B:</span>
+                <div class="slider-container">
+                    <input type="range" id="slider3" min="0" max="255" value="0" oninput="updateColor()">
+                </div>
+                <span class="val-display" id="val3">0</span>
+                <div class="color-block" id="block3"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="author-info">
+        Author: Li ZhiQiang | Organization: JHL | Date: 2025/03
+    </div>
+</div>
+
+<script>
+    let currentMode = 'RGB';
+
+    function switchMode(mode) {
+        if (currentMode === mode) return;
+        currentMode = mode;
+
+        const app = document.getElementById('app');
+        const btnRgb = document.getElementById('btn-rgb');
+        const btnCmy = document.getElementById('btn-cmy');
+        const title = document.getElementById('title');
+        const subtitle = document.getElementById('subtitle');
+        const canvasBg = document.getElementById('canvas-bg');
+
+        const s1 = document.getElementById('slider1');
+        const s2 = document.getElementById('slider2');
+        const s3 = document.getElementById('slider3');
+
+        if (mode === 'RGB') {
+            app.classList.remove('cmy-mode');
+            btnRgb.classList.add('active');
+            btnCmy.classList.remove('active');
+            
+            title.textContent = '光三原色(加色)模拟';
+            subtitle.textContent = 'RGB 光学加色混合模型';
+            canvasBg.style.backgroundColor = '#111111';
+
+            document.getElementById('label1').textContent = '红 R:';
+            document.getElementById('label2').textContent = '绿 G:';
+            document.getElementById('label3').textContent = '蓝 B:';
+
+            s1.min = 0; s1.max = 255; s1.value = 0;
+            s2.min = 0; s2.max = 255; s2.value = 0;
+            s3.min = 0; s3.max = 255; s3.value = 0;
+        } else {
+            app.classList.add('cmy-mode');
+            btnCmy.classList.add('active');
+            btnRgb.classList.remove('active');
+
+            title.textContent = '颜料三原色(减色)模拟';
+            subtitle.textContent = 'CMY 颜料减色混合模型';
+            canvasBg.style.backgroundColor = '#5C5C5C';
+
+            document.getElementById('label1').textContent = '青 C:';
+            document.getElementById('label2').textContent = '品红 M:';
+            document.getElementById('label3').textContent = '黄 Y:';
+
+            s1.min = 0; s1.max = 100; s1.value = 0;
+            s2.min = 0; s2.max = 100; s2.value = 0;
+            s3.min = 0; s3.max = 100; s3.value = 0;
+        }
+
+        updateColor();
+    }
+
+    function toHex(val) {
+        const hex = Math.round(val).toString(16);
+        return hex.length === 1 ? '0' + hex : hex;
+    }
+
+    function updateColor() {
+        const v1 = parseInt(document.getElementById('slider1').value);
+        const v2 = parseInt(document.getElementById('slider2').value);
+        const v3 = parseInt(document.getElementById('slider3').value);
+
+        document.getElementById('val1').textContent = v1;
+        document.getElementById('val2').textContent = v2;
+        document.getElementById('val3').textContent = v3;
+
+        const circle = document.getElementById('color-circle');
+        const hexDisplay = document.getElementById('hex-display');
+
+        const block1 = document.getElementById('block1');
+        const block2 = document.getElementById('block2');
+        const block3 = document.getElementById('block3');
+
+        if (currentMode === 'RGB') {
+            const r = v1;
+            const g = v2;
+            const b = v3;
+
+            const hex = `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+            circle.style.backgroundColor = hex;
+            hexDisplay.textContent = hex.toUpperCase();
+
+            block1.style.backgroundColor = `#${toHex(r)}0000`;
+            block2.style.backgroundColor = `#00${toHex(g)}00`;
+            block3.style.backgroundColor = `#0000${toHex(b)}`;
+        } else {
+            // CMY 减色模式
+            const c = v1;
+            const m = v2;
+            const y = v3;
+
+            // 主色彩 (CMY to RGB)
+            const r = 255 * (1 - c / 100);
+            const g = 255 * (1 - m / 100);
+            const b = 255 * (1 - y / 100);
+
+            const hex = `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+            circle.style.backgroundColor = hex;
+            hexDisplay.textContent = hex.toUpperCase();
+
+            // CMY 仅显示减色部分（吸收的互补色/减色）
+            const c_complement = 255 * (c / 100);
+            const m_complement = 255 * (m / 100);
+            const y_complement = 255 * (y / 100);
+
+            block1.style.backgroundColor = `#${toHex(c_complement)}0000`;
+            block2.style.backgroundColor = `#00${toHex(m_complement)}00`;
+            block3.style.backgroundColor = `#0000${toHex(y_complement)}`;
+        }
+    }
+
+    // 初始化
+    updateColor();
+</script>
+</body>
+</html>
