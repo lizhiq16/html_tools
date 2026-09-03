@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>荧光寿命拟合分析工具 (TCSPC Fit)</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; height: 100vh; display: flex; overflow: hidden; background: #f4f6f9; color: #333; }
+        .main-container { flex: 1; display: flex; flex-direction: column; height: 100%; padding: 15px; gap: 10px; }
+        #plot-container { flex: 1; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); width: 100%; height: 100%; }
+        .sidebar { width: 380px; background: #fff; border-left: 1px solid #e1e4e8; height: 100%; display: flex; flex-direction: column; box-shadow: -2px 0 10px rgba(0,0,0,0.03); }
+        .sidebar-header { padding: 15px 20px; background: #1a2332; color: #fff; }
+        .sidebar-header h2 { font-size: 1.1rem; font-weight: 600; }
+        .sidebar-content { flex: 1; overflow-y: auto; padding: 20px; }
+        .section { margin-bottom: 20px; border-bottom: 1px solid #f0f0f0; padding-bottom: 15px; }
+        .section:last-child { border-bottom: none; }
+        .section-title { font-size: 0.9rem; font-weight: 700; text-transform: uppercase; color: #6c757d; margin-bottom: 12px; letter-spacing: 0.5px; }
+        .form-group { margin-bottom: 12px; display: flex; flex-direction: column; gap: 4px; }
+        .form-group label { font-size: 0.85rem; font-weight: 600; color: #495057; }
+        .form-group input[type="number"], .form-group input[type="text"] { padding: 8px 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: 0.85rem; }
+        .form-inline-left { display: flex; align-items: center; justify-content: flex-start; gap: 8px; }
+        .form-inline-left label { font-size: 0.85rem; font-weight: 600; color: #495057; cursor: pointer; }
+        .custom-checkbox { width: 18px; height: 18px; cursor: pointer; accent-color: #2563eb; }
+        .file-upload-box { border: 2px dashed #cbd5e1; border-radius: 6px; padding: 12px; text-align: center; background: #f8fafc; cursor: pointer; transition: 0.2s; position: relative; margin-bottom: 8px; }
+        .file-upload-box:hover { border-color: #3b82f6; background: #eff6ff; }
+        .file-upload-box input[type="file"] { position: absolute; top:0; left:0; width:100%; height:100%; opacity: 0; cursor: pointer; }
+        .file-status { font-size: 0.75rem; color: #10b981; margin-top: 4px; word-break: break-all; }
+        .btn-group { display: flex; gap: 8px; margin-top: 10px; }
+        button { flex: 1; padding: 10px; border: none; border-radius: 4px; font-weight: 600; font-size: 0.85rem; cursor: pointer; transition: 0.2s; }
+        .btn-primary { background: #2563eb; color: white; }
+        .btn-primary:hover { background: #1d4ed8; }
+        .btn-success { background: #10b981; color: white; }
+        .btn-success:hover { background: #059669; }
+        .btn-danger { background: #ef4444; color: white; }
+        .btn-danger:hover { background: #dc2626; }
+        .results-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; font-size: 0.82rem; font-family: monospace; white-space: pre-wrap; line-height: 1.4; max-height: 220px; overflow-y: auto; }
+        .metric-badge { display: inline-block; background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-weight: bold; margin-bottom: 8px; }
+    </style>
+</head>
+<body>
+
+    <div class="main-container">
+        <div id="plot-container"></div>
+    </div>
+
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h2>TCSPC 荧光寿命拟合面板</h2>
+        </div>
+        <div class="sidebar-content">
+            
+            <div class="section">
+                <div class="section-title">数据载入 (CSV/TXT，取前两列)</div>
+                <div class="file-upload-box">
+                    <span id="data-file-label">点击选择或拖入【衰减数据 CSV】</span>
+                    <input type="file" id="data-file-input" accept=".csv,.txt">
+                </div>
+                <div id="data-file-status" class="file-status"></div>
+
+                <div class="file-upload-box" style="margin-top: 10px;">
+                    <span id="irf-file-label">点击选择【IRF 响应文件】(可选)</span>
+                    <input type="file" id="irf-file-input" accept=".csv,.txt">
+                </div>
+                <div id="irf-file-status" class="file-status"></div>
+
+                <div class="btn-group">
+                    <button class="btn-danger" onclick="clearData()">清空载入数据</button>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">拟合模型控制</div>
+                <div class="form-group">
+                    <label>衰减指数项数 (n):</label>
+                    <input type="number" id="param-n" value="2" min="1" max="6" onchange="triggerFit()">
+                </div>
+
+                <div class="form-group form-inline-left">
+                    <input type="checkbox" id="param-bg" class="custom-checkbox" checked onchange="triggerFit()">
+                    <label for="param-bg">包含拟合背景项 (Background)</label>
+                </div>
+
+                <div class="form-group">
+                    <label>固定 Tau 值 (以逗号分隔，空置表示拟合):</label>
+                    <input type="text" id="param-fixed-taus" placeholder="例如: , 1.5, " onchange="triggerFit()">
+                </div>
+
+                <div class="form-group">
+                    <label>拟合起始索引 (Start Index):</label>
+                    <input type="number" id="param-start-idx" placeholder="自动定位衰减起点" onchange="triggerFit()">
+                </div>
+
+                <div class="form-group">
+                    <label>拟合截断索引 (End Index):</label>
+                    <input type="number" id="param-end-idx" placeholder="默认完整结尾" onchange="triggerFit()">
+                </div>
+
+                <div class="btn-group">
+                    <button class="btn-primary" onclick="triggerFit()">手动刷新拟合</button>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">拟合统计结果与导出</div>
+                <div id="metric-chi2" class="metric-badge">χᵣ² = --</div>
+                <div id="results-output" class="results-box">尚未载入数据...</div>
+
+                <div class="btn-group" style="margin-top: 10px;">
+                    <button class="btn-success" onclick="exportParamsCSV()">导出参数 CSV</button>
+                    <button class="btn-success" onclick="exportFitCurveCSV()">导出拟合曲线 CSV</button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+<script>
+let RAW_DATA = { x: [], y: [] };
+let IRF_DATA = { y: [] };
+let DATA_LOADED = false;
+let IRF_LOADED = false;
+let LATEST_FIT_RESULTS = null;
+
+document.getElementById('data-file-input').addEventListener('change', (e) => handleFileUpload(e, 'data'));
+document.getElementById('irf-file-input').addEventListener('change', (e) => handleFileUpload(e, 'irf'));
+
+window.onload = () => { initPlot(); };
+
+function initPlot() {
+    const layout = {
+        grid: { rows: 2, columns: 1, pattern: 'coupled', roworder: 'top to bottom' },
+        margin: { t: 30, r: 20, l: 60, b: 40 },
+        showlegend: true,
+        legend: { x: 0.75, y: 1 },
+        yaxis: { title: 'Counts', type: 'log', autorange: true },
+        yaxis2: { title: 'Weighted Res.', autorange: true, zeroline: true, zerolinecolor: '#000' },
+        xaxis2: { title: 'Time / Channel', anchor: 'y2', autorange: true }
+    };
+    Plotly.newPlot('plot-container', [], layout, { responsive: true, displayModeBar: true });
+}
+
+function parseCSV(text) {
+    const lines = text.split(/\r\n|\n/);
+    const xArr = [], yArr = [];
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line || line.startsWith('#') || line.startsWith('//')) continue;
+        const parts = line.split(/[\s,]+/);
+        if (parts.length >= 2) {
+            const xVal = parseFloat(parts[0]);
+            const yVal = parseFloat(parts[1]);
+            if (!isNaN(xVal) && !isNaN(yVal)) { xArr.push(xVal); yArr.push(yVal); }
+        } else if (parts.length === 1) {
+            const yVal = parseFloat(parts[0]);
+            if (!isNaN(yVal)) { xArr.push(xArr.length); yArr.push(yVal); }
+        }
+    }
+    return { x: xArr, y: yArr };
+}
+
+function handleFileUpload(event, type) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const parsed = parseCSV(e.target.result);
+            if (parsed.y.length === 0) { alert("未检测到有效数据！"); return; }
+            if (type === 'data') {
+                RAW_DATA = parsed;
+                DATA_LOADED = true;
+                document.getElementById('data-file-status').innerText = `已加载衰减数据: ${file.name} (${parsed.y.length} 点)`;
+                document.getElementById('param-start-idx').value = "";
+                document.getElementById('param-end-idx').value = "";
+            } else if (type === 'irf') {
+                IRF_DATA = parsed;
+                IRF_LOADED = true;
+                document.getElementById('irf-file-status').innerText = `已加载 IRF 数据: ${file.name} (${parsed.y.length} 点)`;
+            }
+            triggerFit();
+        } catch (err) { alert("读取失败: " + err.message); }
+    };
+    reader.readAsText(file);
+}
+
+function clearData() {
+    RAW_DATA = { x: [], y: [] };
+    IRF_DATA = { y: [] };
+    DATA_LOADED = false;
+    IRF_LOADED = false;
+    LATEST_FIT_RESULTS = null;
+    document.getElementById('data-file-input').value = "";
+    document.getElementById('irf-file-input').value = "";
+    document.getElementById('data-file-status').innerText = "";
+    document.getElementById('irf-file-status').innerText = "";
+    document.getElementById('results-output').innerText = "数据已清空。";
+    document.getElementById('metric-chi2').innerText = "χᵣ² = --";
+    initPlot();
+}
+
+function convolve(signal, irf) {
+    const n = signal.length;
+    let sumIRF = 0;
+    for(let i=0; i<irf.length; i++) sumIRF += irf[i];
+    const normIRF = sumIRF > 0 ? irf.map(v => v / sumIRF) : irf;
+    const result = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+        let convSum = 0;
+        for (let j = 0; j <= i; j++) convSum += normIRF[j] * signal[i - j];
+        result[i] = convSum;
+    }
+    return Array.from(result);
+}
+
+function triggerFit() {
+    if (!DATA_LOADED || RAW_DATA.y.length === 0) return;
+
+    try {
+        let n = parseInt(document.getElementById('param-n').value);
+        if (isNaN(n) || n < 1) n = 1;
+        
+        const hasBg = document.getElementById('param-bg').checked;
+        
+        const fixedTausInput = document.getElementById('param-fixed-taus').value.split(',');
+        const fixedTaus = new Array(n).fill(null);
+        for(let i=0; i<n; i++) {
+            if(fixedTausInput[i] && fixedTausInput[i].trim() !== '') {
+                const val = parseFloat(fixedTausInput[i].trim());
+                if(!isNaN(val)) fixedTaus[i] = val;
+            }
+        }
+
+        let maxIdx = 0;
+        for(let i=1; i<RAW_DATA.y.length; i++) {
+            if(RAW_DATA.y[i] > RAW_DATA.y[maxIdx]) maxIdx = i;
+        }
+
+        let autoStartIdx = maxIdx;
+        if (!IRF_LOADED) {
+            autoStartIdx = Math.min(maxIdx + 2, RAW_DATA.y.length - 10);
+        }
+
+        let startIdx = parseInt(document.getElementById('param-start-idx').value);
+        let endIdx = parseInt(document.getElementById('param-end-idx').value);
+
+        if (isNaN(startIdx) || startIdx < 0) startIdx = autoStartIdx;
+        if (isNaN(endIdx) || endIdx > RAW_DATA.y.length || endIdx <= startIdx) endIdx = RAW_DATA.y.length;
+
+        const fitXRaw = RAW_DATA.x.slice(startIdx, endIdx);
+        const fitY = RAW_DATA.y.slice(startIdx, endIdx);
+        const x0 = fitXRaw.map(v => v - fitXRaw[0]);
+
+        let fitIrf = null;
+        if (IRF_LOADED && IRF_DATA.y.length >= endIdx) {
+            fitIrf = IRF_DATA.y.slice(startIdx, endIdx);
+        }
+
+        const fitResults = RobustDecayFitter(x0, fitY, n, fixedTaus, hasBg, fitIrf);
+        
+        LATEST_FIT_RESULTS = {
+            ...fitResults,
+            fitXRaw: fitXRaw,
+            fitX: x0,
+            fitY: fitY,
+            startIdx: startIdx,
+            endIdx: endIdx
+        };
+
+        renderPlot(RAW_DATA.x, RAW_DATA.y, fitXRaw, fitY, fitResults, startIdx, endIdx);
+        renderResults(fitResults, startIdx, endIdx);
+    } catch (err) {
+        console.error(err);
+        document.getElementById('results-output').innerText = "拟合运行出错: " + err.message;
+    }
+}
+
+function RobustDecayFitter(x0, fitY, n, fixedTaus, hasBg, fitIrf) {
+    const N = fitY.length;
+    const tailLen = Math.max(5, Math.floor(N * 0.05));
+    const tailSlice = fitY.slice(N - tailLen).sort((a,b) => a - b);
+    const bgGuess = Math.max(0.1, tailSlice[Math.floor(tailSlice.length / 2)]);
+    const peakY = Math.max(10.0, fitY[0] - bgGuess);
+    const timeSpan = x0[x0.length - 1] - x0[0] || 1.0;
+
+    let fixedTauLog = fixedTaus.map(v => v !== null ? Math.log(Math.max(v, 1e-5)) : null);
+
+    function decodeParams(pLog) {
+        let pIdx = 0;
+        let A = [];
+        for (let i = 0; i < n; i++) A.push(Math.exp(pLog[pIdx++]));
+        let taus = [];
+        for (let i = 0; i < n; i++) {
+            if (fixedTauLog[i] === null) taus.push(Math.exp(pLog[pIdx++]));
+            else taus.push(Math.exp(fixedTauLog[i]));
+        }
+        let bg = hasBg ? Math.exp(pLog[pIdx++]) : 0.0;
+        return { A, taus, bg };
+    }
+
+    function calcYHat(A, taus, bg) {
+        let decay = new Float64Array(N);
+        for (let t = 0; t < N; t++) {
+            let sum = 0;
+            for (let i = 0; i < n; i++) sum += A[i] * Math.exp(-x0[t] / taus[i]);
+            decay[t] = sum;
+        }
+        let yHat = Array.from(decay);
+        if (fitIrf) yHat = convolve(yHat, fitIrf);
+        if (hasBg) {
+            for (let t = 0; t < N; t++) yHat[t] += bg;
+        }
+        return yHat;
+    }
+
+    function costFunction(pLog) {
+        const { A, taus, bg } = decodeParams(pLog);
+        const yHat = calcYHat(A, taus, bg);
+        let chi2 = 0;
+        for (let i = 0; i < N; i++) {
+            let diff = fitY[i] - yHat[i];
+            let w = 1.0 / Math.max(fitY[i], 1.0);
+            chi2 += diff * diff * w;
+        }
+        return chi2;
+    }
+
+    let initPLog = [];
+    for (let i = 0; i < n; i++) initPLog.push(Math.log(peakY / n));
+    for (let i = 0; i < n; i++) {
+        if (fixedTauLog[i] === null) {
+            let tStep = Math.max(timeSpan * Math.pow(0.1, (i + 1) / n), 0.5);
+            initPLog.push(Math.log(tStep));
+        }
+    }
+    if (hasBg) initPLog.push(Math.log(bgGuess));
+
+    function nelderMead(fn, initP, maxIter = 400) {
+        const dim = initP.length;
+        let simplex = [ [...initP] ];
+        for (let i = 0; i < dim; i++) {
+            let p = [...initP];
+            p[i] += p[i] !== 0 ? 0.2 : 0.1;
+            simplex.push(p);
+        }
+
+        let fVals = simplex.map(p => fn(p));
+
+        for (let iter = 0; iter < maxIter; iter++) {
+            let indices = Array.from({length: dim + 1}, (_, i) => i);
+            indices.sort((a, b) => fVals[a] - fVals[b]);
+            simplex = indices.map(i => simplex[i]);
+            fVals = indices.map(i => fVals[i]);
+
+            let centroid = new Array(dim).fill(0);
+            for (let i = 0; i < dim; i++) {
+                for (let j = 0; j < dim; j++) centroid[j] += simplex[i][j] / dim;
+            }
+
+            let alpha = 1.0;
+            let xr = centroid.map((c, j) => c + alpha * (c - simplex[dim][j]));
+            let fxr = fn(xr);
+
+            if (fxr < fVals[0]) {
+                let gamma = 2.0;
+                let xe = centroid.map((c, j) => c + gamma * (xr[j] - c));
+                let fxe = fn(xe);
+                if (fxe < fxr) { simplex[dim] = xe; fVals[dim] = fxe; }
+                else { simplex[dim] = xr; fVals[dim] = fxr; }
+            } else if (fxr < fVals[dim - 1]) {
+                simplex[dim] = xr; fVals[dim] = fxr;
+            } else {
+                let rho = 0.5;
+                let xc = centroid.map((c, j) => c + rho * (simplex[dim][j] - c));
+                let fxc = fn(xc);
+                if (fxc < fVals[dim]) { simplex[dim] = xc; fVals[dim] = fxc; }
+                else {
+                    for (let i = 1; i <= dim; i++) {
+                        simplex[i] = simplex[0].map((s, j) => s + 0.5 * (simplex[i][j] - s));
+                        fVals[i] = fn(simplex[i]);
+                    }
+                }
+            }
+        }
+        return simplex[0];
+    }
+
+    const optPLog = nelderMead(costFunction, initPLog, 500);
+    const { A, taus, bg } = decodeParams(optPLog);
+    const yHat = calcYHat(A, taus, bg);
+
+    let weightedResiduals = fitY.map((y, i) => (y - yHat[i]) / Math.sqrt(Math.max(y, 1.0)));
+    let dof = N - optPLog.length;
+    let chiSq = weightedResiduals.reduce((acc, r) => acc + r * r, 0) / (dof > 0 ? dof : 1);
+
+    let components = [];
+    for (let i = 0; i < n; i++) {
+        let compDecay = x0.map(t => A[i] * Math.exp(-t / taus[i]));
+        if (fitIrf) compDecay = convolve(compDecay, fitIrf);
+        components.push(compDecay);
+    }
+
+    let sumA = A.reduce((a, b) => a + b, 0);
+    let avgTauAmp = A.reduce((acc, ai, i) => acc + ai * taus[i], 0) / (sumA || 1);
+    let avgTauInt = A.reduce((acc, ai, i) => acc + ai * taus[i] * taus[i], 0) / (A.reduce((acc, ai, i) => acc + ai * taus[i], 0) || 1);
+
+    return { yHat, A, taus, bg, weightedResiduals, chiSq, components, avgTauAmp, avgTauInt };
+}
+
+function renderPlot(fullX, fullY, fitXRaw, fitY, results, startIdx, endIdx) {
+    const fullHoverText = fullX.map((xVal, idx) => `Index: ${idx}<br>X: ${xVal}<br>Y: ${fullY[idx]}`);
+    const fitHoverText = fitXRaw.map((xVal, idx) => `Index: ${startIdx + idx}<br>X: ${xVal}<br>Y Fit: ${results.yHat[idx].toFixed(2)}`);
+
+    const traceData = { 
+        x: fullX, 
+        y: fullY, 
+        mode: 'markers', 
+        name: '数据 Data', 
+        marker: { size: 3, color: 'gray' },
+        hoverinfo: 'text',
+        text: fullHoverText
+    };
+    
+    const traceFit = { 
+        x: fitXRaw, 
+        y: results.yHat, 
+        mode: 'lines', 
+        name: '拟合 Fit', 
+        line: { color: 'red', width: 2 },
+        hoverinfo: 'text',
+        text: fitHoverText
+    };
+
+    let traces = [traceData, traceFit];
+
+    results.components.forEach((comp, idx) => {
+        traces.push({
+            x: fitXRaw,
+            y: comp.map(v => v + (results.bg || 0)),
+            mode: 'lines',
+            name: `分量 Component ${idx + 1}`,
+            line: { dash: 'dash' }
+        });
+    });
+
+    const resHoverText = fitXRaw.map((xVal, idx) => `Index: ${startIdx + idx}<br>X: ${xVal}<br>Res: ${results.weightedResiduals[idx].toFixed(3)}`);
+    const traceRes = {
+        x: fitXRaw,
+        y: results.weightedResiduals,
+        xaxis: 'x2',
+        yaxis: 'y2',
+        mode: 'markers',
+        name: '残差 Residuals',
+        marker: { size: 2, color: 'crimson' },
+        hoverinfo: 'text',
+        text: resHoverText
+    };
+    traces.push(traceRes);
+
+    const validY = fullY.filter(v => v > 0);
+    const minY = validY.length > 0 ? Math.min(...validY) : 1;
+    const maxY = Math.max(...fullY);
+
+    const layout = {
+        grid: { rows: 2, columns: 1, pattern: 'coupled', roworder: 'top to bottom' },
+        margin: { t: 20, r: 20, l: 60, b: 40 },
+        showlegend: true,
+        legend: { orientation: 'h', y: 1.15 },
+        yaxis: { 
+            title: 'Counts', 
+            type: 'log', 
+            range: [Math.log10(minY * 0.8), Math.log10(maxY * 1.5)], 
+            autorange: false 
+        },
+        yaxis2: { 
+            title: '残差 (Weighted)', 
+            domain: [0, 0.2], 
+            zeroline: true, 
+            autorange: true 
+        },
+        xaxis2: { 
+            title: '时间 / Channel', 
+            anchor: 'y2', 
+            autorange: true 
+        }
+    };
+
+    Plotly.react('plot-container', traces, layout);
+}
+
+function renderResults(res, sIdx, eIdx) {
+    document.getElementById('metric-chi2').innerText = `χᵣ² = ${res.chiSq.toFixed(4)}`;
+
+    let out = `【拟合报告 Summary】\n`;
+    out += `----------------------------\n`;
+    out += `Reduced Chi-Sq (χᵣ²) : ${res.chiSq.toFixed(4)}\n`;
+    out += `振幅加权平均寿命 τ_amp  : ${res.avgTauAmp.toFixed(4)}\n`;
+    out += `强度加权平均寿命 τ_int  : ${res.avgTauInt.toFixed(4)}\n`;
+    out += `拟合区间 Index       : ${sIdx} -> ${eIdx}\n`;
+    out += `----------------------------\n`;
+
+    let totalInt = 0;
+    res.A.forEach((a, i) => totalInt += a * res.taus[i]);
+
+    res.A.forEach((a, i) => {
+        let frac = ((a * res.taus[i]) / (totalInt || 1)) * 100;
+        out += `分量 ${i+1}:\n`;
+        out += `  振幅 (A${i+1})  = ${a.toFixed(3)}\n`;
+        out += `  寿命 (τ${i+1})  = ${res.taus[i].toFixed(4)}\n`;
+        out += `  占比 Fraction  = ${frac.toFixed(2)}%\n`;
+    });
+
+    if (res.bg !== null && res.bg !== undefined) {
+        out += `----------------------------\n`;
+        out += `背景项 Background : ${res.bg.toFixed(3)}\n`;
+    }
+
+    document.getElementById('results-output').innerText = out;
+}
+
+function downloadCSV(csvContent, fileName) {
+    const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", fileName);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+function exportParamsCSV() {
+    if (!LATEST_FIT_RESULTS) { alert("请先进行有效拟合后再导出数据！"); return; }
+    const res = LATEST_FIT_RESULTS;
+    let csv = "component,amplitude_Ai,tau_i,integral_fraction(%),reduced_chi_square,start_idx,end_idx\n";
+    let totalInt = 0;
+    res.A.forEach((a, i) => totalInt += a * res.taus[i]);
+    res.A.forEach((a, i) => {
+        let frac = ((a * res.taus[i]) / (totalInt || 1)) * 100;
+        csv += `comp_${i+1},${a},${res.taus[i]},${frac.toFixed(4)},${res.chiSq},${res.startIdx},${res.endIdx}\n`;
+    });
+    if (res.bg !== null && res.bg !== undefined) {
+        csv += `background,${res.bg},,,${res.chiSq},${res.startIdx},${res.endIdx}\n`;
+    }
+    downloadCSV(csv, "fit_params.csv");
+}
+
+function exportFitCurveCSV() {
+    if (!LATEST_FIT_RESULTS || !RAW_DATA.x || RAW_DATA.x.length === 0) { 
+        alert("请先进行有效拟合后再导出数据！"); 
+        return; 
+    }
+    const res = LATEST_FIT_RESULTS;
+    const startIdx = res.startIdx;
+    const endIdx = res.endIdx;
+    const totalPoints = RAW_DATA.x.length;
+
+    let header = ["x_raw", "y_raw", "y_fit", "weighted_residual"];
+    res.components.forEach((_, i) => header.push(`comp_${i+1}`));
+    let csv = header.join(",") + "\n";
+
+    for (let i = 0; i < totalPoints; i++) {
+        let xRaw = RAW_DATA.x[i];
+        let yRaw = RAW_DATA.y[i];
+
+        if (i >= startIdx && i < endIdx) {
+            let fitOffset = i - startIdx;
+            let yFit = res.yHat[fitOffset];
+            let resi = res.weightedResiduals[fitOffset];
+
+            let row = [xRaw, yRaw, yFit, resi];
+            res.components.forEach(comp => row.push(comp[fitOffset]));
+            csv += row.join(",") + "\n";
+        } else {
+            let row = [xRaw, yRaw, 0, 0];
+            res.components.forEach(() => row.push(0));
+            csv += row.join(",") + "\n";
+        }
+    }
+
+    downloadCSV(csv, "fit_curve.csv");
+}
+</script>
+</body>
+</html>

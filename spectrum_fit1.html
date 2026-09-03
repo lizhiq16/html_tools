@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>新一代光谱智能分峰工具 (全局优化版)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { display: flex; height: 100vh; background-color: #f5f5f7; color: #333; overflow: hidden; }
+        .plot-container { flex: 1; padding: 20px; display: flex; flex-direction: column; height: 100%; }
+        .canvas-wrapper { flex: 1; background: #ffffff; border-radius: 8px; padding: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); position: relative; }
+        .control-panel { width: 380px; background: #ffffff; border-left: 1px solid #e5e5e5; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; box-shadow: -2px 0 10px rgba(0,0,0,0.02); }
+        h2 { font-size: 18px; border-bottom: 2px solid #007aff; padding-bottom: 8px; color: #1d1d1f; }
+        .section-title { font-size: 13px; font-weight: 600; color: #6e6e73; text-transform: uppercase; margin-bottom: 6px; }
+        .form-group { display: flex; flex-direction: column; gap: 6px; }
+        label { font-size: 12px; font-weight: 500; }
+        input[type="file"], input[type="text"], select { width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; outline: none; }
+        .checkbox-group { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500; cursor: pointer; }
+        .btn { padding: 10px 12px; border: none; border-radius: 6px; background-color: #007aff; color: white; font-weight: 600; font-size: 13px; cursor: pointer; transition: 0.2s; }
+        .btn:hover { background-color: #0056b3; }
+        .btn-secondary { background-color: #e5e5ea; color: #1d1d1f; font-weight: 500; }
+        .btn-secondary:hover { background-color: #d1d1d6; }
+        .btn-group { display: flex; gap: 8px; }
+        .status-box { font-size: 12px; padding: 10px; border-radius: 6px; background-color: #f2f2f7; border: 1px solid #e5e5e5; }
+        .metrics { display: flex; justify-content: space-between; font-weight: 600; font-size: 14px; color: #34c759; margin-top: 4px; }
+        table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 5px; }
+        th, td { border: 1px solid #e5e5e5; padding: 5px; text-align: center; }
+        th { background-color: #f2f2f7; }
+        .peak-tags { display: flex; flex-wrap: wrap; gap: 4px; max-height: 80px; overflow-y: auto; padding: 6px; border: 1px solid #eee; border-radius: 6px; background: #fafafa; }
+        .tag { background: #e5e5ea; font-size: 11px; padding: 3px 8px; border-radius: 4px; cursor: pointer; }
+        .tag:hover { background: #007aff; color: white; }
+    </style>
+</head>
+<body>
+
+    <div class="plot-container">
+        <div class="canvas-wrapper">
+            <canvas id="spectrumChart"></canvas>
+        </div>
+    </div>
+
+    <div class="control-panel">
+        <h2>智能分峰拟合面板</h2>
+
+        <div class="form-group">
+            <div class="section-title">1. 光谱数据导入</div>
+            <input type="file" id="fileInput" accept=".txt,.csv,.dat">
+        </div>
+
+        <div class="form-group">
+            <div class="section-title">2. 智能检测峰位</div>
+            <button class="btn btn-secondary" onclick="autoDetectPeaks()">自适应检测峰位</button>
+            <div id="detectedPeaks" class="peak-tags">
+                <span style="color:#8e8e93; font-size:11px;">导入数据后自动显示...</span>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <div class="section-title">3. 拟合算法与线型</div>
+            <label for="peakType">峰型选择:</label>
+            <select id="peakType" onchange="runHybridFit()">
+                <option value="gaussian">Gaussian (高斯形)</option>
+                <option value="lorentzian">Lorentzian (洛伦兹形)</option>
+                <option value="voigt">Voigt (伏格特复合形)</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label class="checkbox-group">
+                <input type="checkbox" id="useBaseline" checked onchange="runHybridFit()">
+                包含多项式/常数基线拟合
+            </label>
+        </div>
+
+        <div class="form-group">
+            <label for="centersInput">峰中心估算 (空格隔开):</label>
+            <input type="text" id="centersInput" placeholder="例如: 448.80 477.60 510.00" onchange="runHybridFit()">
+        </div>
+
+        <button class="btn" onclick="runHybridFit()">执行混合全局拟合</button>
+
+        <div class="form-group">
+            <div class="section-title">4. 拟合评估</div>
+            <div class="status-box">
+                <div>算法状态: <span id="fitStatus">待操作</span></div>
+                <div class="metrics">R² 决定系数: <span id="r2Value">N/A</span></div>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <div class="section-title">5. 最优拟合参数表</div>
+            <div style="overflow-x:auto;">
+                <table id="paramTable">
+                    <thead>
+                        <tr><th>#</th><th>Amplitude</th><th>Center</th><th>Width / Params</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="4" style="color:#8e8e93;">暂无数据</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <div class="section-title">6. 数据导出</div>
+            <div class="btn-group">
+                <button class="btn btn-secondary" style="flex:1" onclick="exportParams()">下载参数 TXT</button>
+                <button class="btn btn-secondary" style="flex:1" onclick="exportDeconvoluted()">下载分峰曲线</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let rawX = [], rawY = [];
+        let chartInstance = null;
+        let fitResults = null;
+
+        const ctx = document.getElementById('spectrumChart').getContext('2d');
+        chartInstance = new Chart(ctx, {
+            type: 'scatter',
+            data: { datasets: [] },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                scales: {
+                    x: { type: 'linear', position: 'bottom', title: { display: true, text: 'Wavelength (nm)' } },
+                    y: { title: { display: true, text: 'Intensity' } }
+                },
+                plugins: { legend: { position: 'top' } }
+            }
+        });
+
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                const text = evt.target.result;
+                const lines = text.split(/\r?\n/);
+                rawX = []; rawY = [];
+
+                for (let line of lines) {
+                    line = line.trim();
+                    if (!line || line.startsWith('#') || line.startsWith('//')) continue;
+                    const parts = line.split(/[\s,]+/).map(Number);
+                    if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                        rawX.push(parts[0]);
+                        rawY.push(parts[1]);
+                    }
+                }
+
+                if (rawX.length === 0) return alert("解析数据失败");
+                autoDetectPeaks();
+            };
+            reader.readAsText(file);
+        });
+
+        function autoDetectPeaks() {
+            if (rawX.length === 0) return;
+            const maxY = Math.max(...rawY);
+            const heightThresh = maxY * 0.03;
+            let peaksIdx = [];
+
+            for (let i = 2; i < rawY.length - 2; i++) {
+                if (rawY[i] >= heightThresh && rawY[i] > rawY[i-1] && rawY[i] > rawY[i-2] && rawY[i] >= rawY[i+1] && rawY[i] >= rawY[i+2]) {
+                    if (peaksIdx.length === 0 || (i - peaksIdx[peaksIdx.length - 1]) >= 8) {
+                        peaksIdx.push(i);
+                    }
+                }
+            }
+
+            const container = document.getElementById('detectedPeaks');
+            container.innerHTML = '';
+            const detectedCenters = [];
+
+            peaksIdx.forEach(idx => {
+                const cenVal = rawX[idx].toFixed(2);
+                detectedCenters.push(cenVal);
+                const tag = document.createElement('span');
+                tag.className = 'tag';
+                tag.innerText = cenVal;
+                tag.onclick = () => {
+                    const input = document.getElementById('centersInput');
+                    let curr = input.value.trim().split(/\s+/).filter(v => v);
+                    if(!curr.includes(cenVal)) {
+                        curr.push(cenVal);
+                        curr.sort((a,b)=>parseFloat(a)-parseFloat(b));
+                        input.value = curr.join(' ');
+                        runHybridFit();
+                    }
+                };
+                container.appendChild(tag);
+            });
+
+            document.getElementById('centersInput').value = detectedCenters.join(' ');
+            runHybridFit();
+        }
+
+        // --- 函数线型模型 ---
+        function gaussian(x, amp, cen, wid) {
+            return amp * Math.exp(-Math.pow(x - cen, 2) / (2 * Math.pow(wid, 2)));
+        }
+
+        function lorentzian(x, amp, cen, wid) {
+            return amp * (Math.pow(wid, 2) / (Math.pow(x - cen, 2) + Math.pow(wid, 2)));
+        }
+
+        function wofz(re, im) {
+            let x = Math.abs(re), y = Math.abs(im);
+            if (y < 4.29 && x < 5.33) return Math.exp(-x*x) * Math.cos(2*x*y);
+            return y / (Math.PI * (x*x + y*y));
+        }
+
+        function voigt(x, amp, cen, sigma, gamma) {
+            sigma = Math.max(Math.abs(sigma), 1e-4);
+            gamma = Math.max(Math.abs(gamma), 1e-4);
+            let z_re = (x - cen) / (sigma * Math.SQRT2);
+            let z_im = gamma / (sigma * Math.SQRT2);
+            let v_val = wofz(z_re, z_im) / (sigma * Math.sqrt(2 * Math.PI));
+            let peak_norm = wofz(0, gamma / (sigma * Math.SQRT2)) / (sigma * Math.sqrt(2 * Math.PI));
+            return amp * (v_val / (peak_norm || 1.0));
+        }
+
+        function calcModelY(x, peakType, params, useBaseline) {
+            let y = 0;
+            const stride = (peakType === 'voigt') ? 4 : 3;
+            const numPeakParams = useBaseline ? params.length - 1 : params.length;
+
+            for (let i = 0; i < numPeakParams; i += stride) {
+                if (peakType === 'gaussian') y += gaussian(x, params[i], params[i+1], params[i+2]);
+                else if (peakType === 'lorentzian') y += lorentzian(x, params[i], params[i+1], params[i+2]);
+                else if (peakType === 'voigt') y += voigt(x, params[i], params[i+1], params[i+2], params[i+3]);
+            }
+            if (useBaseline) y += params[params.length - 1];
+            return y;
+        }
+
+        function computeMSE(peakType, params, useBaseline) {
+            let sumSquare = 0;
+            for (let i = 0; i < rawX.length; i++) {
+                let diff = rawY[i] - calcModelY(rawX[i], peakType, params, useBaseline);
+                sumSquare += diff * diff;
+            }
+            return sumSquare / rawX.length;
+        }
+
+        // --- 核心升级：双阶段混合全局优化算法 (Randomized Global Search + Adaptive Local Coordinate Descent) ---
+        function runHybridFit() {
+            if (rawX.length === 0) return;
+
+            const peakType = document.getElementById('peakType').value;
+            const useBaseline = document.getElementById('useBaseline').checked;
+            const centersText = document.getElementById('centersInput').value.trim();
+            if (!centersText) return;
+
+            const centers = centersText.split(/\s+/).map(Number).filter(v => !isNaN(v)).sort((a,b)=>a-b);
+            if (centers.length === 0) return;
+
+            const yMax = Math.max(...rawY);
+            const sortedY = [...rawY].sort((a,b)=>a-b);
+            const baseGuess = sortedY[Math.floor(sortedY.length * 0.05)];
+
+            // 1. 设定物理硬性边界 Bounds (绝不允许出现 >20nm 的怪异峰)
+            let bounds = [];
+            centers.forEach(c => {
+                if (peakType === 'voigt') {
+                    bounds.push({ minAmp: 0, maxAmp: yMax*1.2, minCen: c-5, maxCen: c+5, minW1: 0.3, maxW1: 12, minW2: 0.3, maxW2: 12 });
+                } else {
+                    bounds.push({ minAmp: 0, maxAmp: yMax*1.2, minCen: c-5, maxCen: c+5, minW: 0.3, maxW: 12 });
+                }
+            });
+
+            // 阶段 1：全局随机抽样探索 (Global Exploration)
+            let bestParams = [];
+            let minMSE = Infinity;
+            const numSamples = 500;
+
+            for (let s = 0; s < numSamples; s++) {
+                let candidate = [];
+                bounds.forEach(b => {
+                    let amp = Math.random() * b.maxAmp;
+                    let cen = b.minCen + Math.random() * (b.maxCen - b.minCen);
+                    if (peakType === 'voigt') {
+                        candidate.push(amp, cen, 1 + Math.random()*3, 1 + Math.random()*3);
+                    } else {
+                        candidate.push(amp, cen, 1 + Math.random()*4);
+                    }
+                });
+                if (useBaseline) candidate.push(baseGuess * Math.random());
+
+                let mse = computeMSE(peakType, candidate, useBaseline);
+                if (mse < minMSE) {
+                    minMSE = mse;
+                    bestParams = candidate;
+                }
+            }
+
+            // 阶段 2：受限坐标自适应下降 (Local Adaptive Coordinate Descent)
+            let p = [...bestParams];
+            let stepSizes = p.map((val, i) => Math.max(0.05, Math.abs(val) * 0.1));
+            const iterations = 400;
+
+            for (let iter = 0; iter < iterations; iter++) {
+                let improved = false;
+                for (let i = 0; i < p.length; i++) {
+                    let originalVal = p[i];
+
+                    // 向上试探
+                    p[i] = originalVal + stepSizes[i];
+                    p[i] = clampParam(p[i], i, bounds, peakType, useBaseline, yMax);
+                    let mseUp = computeMSE(peakType, p, useBaseline);
+
+                    if (mseUp < minMSE) {
+                        minMSE = mseUp;
+                        stepSizes[i] *= 1.05;
+                        improved = true;
+                        continue;
+                    }
+
+                    // 向下试探
+                    p[i] = originalVal - stepSizes[i];
+                    p[i] = clampParam(p[i], i, bounds, peakType, useBaseline, yMax);
+                    let mseDown = computeMSE(peakType, p, useBaseline);
+
+                    if (mseDown < minMSE) {
+                        minMSE = mseDown;
+                        stepSizes[i] *= 1.05;
+                        improved = true;
+                        continue;
+                    }
+
+                    // 还原并收缩步长
+                    p[i] = originalVal;
+                    stepSizes[i] *= 0.95;
+                }
+            }
+
+            // 拟合指标统计
+            const yFit = rawX.map(x => calcModelY(x, peakType, p, useBaseline));
+            let ssRes = 0, ssTot = 0;
+            const meanY = rawY.reduce((a,b) => a+b, 0) / rawY.length;
+            for (let i = 0; i < rawY.length; i++) {
+                ssRes += Math.pow(rawY[i] - yFit[i], 2);
+                ssTot += Math.pow(rawY[i] - meanY, 2);
+            }
+            const r2 = 1 - (ssRes / (ssTot || 1));
+
+            fitResults = { peakType, popt: p, centers, r2, yFit, useBaseline };
+
+            document.getElementById('fitStatus').innerText = "混合优化完成";
+            document.getElementById('r2Value').innerText = r2.toFixed(5);
+
+            renderParamTable(p, peakType, centers.length, useBaseline);
+            updateChartWithFit(yFit, p, peakType, centers.length, useBaseline);
+        }
+
+        function clampParam(val, idx, bounds, peakType, useBaseline, yMax) {
+            if (useBaseline && idx === bounds.length * ((peakType === 'voigt') ? 4 : 3)) {
+                return Math.min(Math.max(0, val), yMax * 0.3);
+            }
+            const stride = (peakType === 'voigt') ? 4 : 3;
+            const pIdx = Math.floor(idx / stride);
+            const subIdx = idx % stride;
+            const b = bounds[pIdx];
+
+            if (subIdx === 0) return Math.min(Math.max(b.minAmp, val), b.maxAmp);
+            if (subIdx === 1) return Math.min(Math.max(b.minCen, val), b.maxCen);
+            if (peakType === 'voigt') {
+                if (subIdx === 2) return Math.min(Math.max(b.minW1, val), b.maxW1);
+                if (subIdx === 3) return Math.min(Math.max(b.minW2, val), b.maxW2);
+            } else {
+                if (subIdx === 2) return Math.min(Math.max(b.minW, val), b.maxW);
+            }
+            return val;
+        }
+
+        function renderParamTable(popt, peakType, numPeaks, useBaseline) {
+            const tbody = document.querySelector('#paramTable tbody');
+            tbody.innerHTML = '';
+            for (let i = 0; i < numPeaks; i++) {
+                const tr = document.createElement('tr');
+                if (peakType === 'voigt') {
+                    const [amp, cen, sig, gam] = popt.slice(i*4, i*4+4);
+                    tr.innerHTML = `<td>P${i+1}</td><td>${amp.toFixed(3)}</td><td>${cen.toFixed(2)}</td><td>σ:${sig.toFixed(2)}<br>γ:${gam.toFixed(2)}</td>`;
+                } else {
+                    const [amp, cen, wid] = popt.slice(i*3, i*3+3);
+                    tr.innerHTML = `<td>P${i+1}</td><td>${amp.toFixed(3)}</td><td>${cen.toFixed(2)}</td><td>${wid.toFixed(2)}</td>`;
+                }
+                tbody.appendChild(tr);
+            }
+            if (useBaseline) {
+                const bVal = popt[popt.length - 1];
+                const tr = document.createElement('tr');
+                tr.style.background = "#f9f9f9";
+                tr.innerHTML = `<td><b>Base</b></td><td colspan="3"><b>b = ${bVal.toFixed(4)}</b></td>`;
+                tbody.appendChild(tr);
+            }
+        }
+
+        function updateChartWithFit(yFit, popt, peakType, numPeaks, useBaseline) {
+            const colors = ['#ff3b30', '#34c759', '#af52de', '#ff9500', '#5856d6', '#00c7be'];
+            const datasets = [
+                { label: 'Original', data: rawX.map((x, i) => ({ x: x, y: rawY[i] })), showLine: true, borderColor: 'rgba(0,0,0,0.3)', borderWidth: 1, pointRadius: 0 },
+                { label: 'Total Fit', data: rawX.map((x, i) => ({ x: x, y: yFit[i] })), showLine: true, borderColor: '#007aff', borderWidth: 2, pointRadius: 0 }
+            ];
+
+            const stride = (peakType === 'voigt') ? 4 : 3;
+            const bVal = useBaseline ? popt[popt.length - 1] : 0;
+
+            for (let i = 0; i < numPeaks; i++) {
+                const peakParams = popt.slice(i * stride, (i + 1) * stride);
+                const color = colors[i % colors.length];
+                const peakData = rawX.map(x => {
+                    let yVal = 0;
+                    if (peakType === 'gaussian') yVal = gaussian(x, ...peakParams);
+                    else if (peakType === 'lorentzian') yVal = lorentzian(x, ...peakParams);
+                    else if (peakType === 'voigt') yVal = voigt(x, ...peakParams);
+                    return { x: x, y: yVal + bVal };
+                });
+                datasets.push({ label: `Peak ${i+1}`, data: peakData, showLine: true, borderColor: color, borderDash: [4, 4], borderWidth: 1.5, pointRadius: 0 });
+            }
+            chartInstance.data.datasets = datasets;
+            chartInstance.update();
+        }
+
+        function downloadFile(filename, text) {
+            const element = document.createElement('a');
+            element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(text));
+            element.setAttribute('download', filename);
+            document.body.appendChild(element);
+            element.click();
+            document.body.removeChild(element);
+        }
+
+        function exportParams() {
+            if (!fitResults) return alert("请先拟合");
+            const { peakType, popt, r2, centers, useBaseline } = fitResults;
+            let text = `# 智能混合优化拟合结果\n# R² = ${r2.toFixed(6)}\n# Model: ${peakType}\n\n`;
+            if (peakType === 'voigt') {
+                text += "Peak#\tAmp\tCenter\tSigma\tGamma\n";
+                for (let i = 0; i < centers.length; i++) {
+                    const [amp, cen, sig, gam] = popt.slice(i*4, i*4+4);
+                    text += `${i+1}\t${amp.toFixed(5)}\t${cen.toFixed(4)}\t${sig.toFixed(4)}\t${gam.toFixed(4)}\n`;
+                }
+            } else {
+                text += "Peak#\tAmp\tCenter\tWidth\n";
+                for (let i = 0; i < centers.length; i++) {
+                    const [amp, cen, wid] = popt.slice(i*3, i*3+3);
+                    text += `${i+1}\t${amp.toFixed(5)}\t${cen.toFixed(4)}\t${wid.toFixed(4)}\n`;
+                }
+            }
+            if (useBaseline) text += `\nBaseline Offset b = ${popt[popt.length - 1].toFixed(5)}\n`;
+            downloadFile("fitted_parameters.txt", text);
+        }
+
+        function exportDeconvoluted() {
+            if (!fitResults) return alert("请先拟合");
+            const { peakType, popt, centers } = fitResults;
+            const stride = (peakType === 'voigt') ? 4 : 3;
+            let header = "Wavelength\tTotalFit\t" + centers.map((_, i) => `Peak${i+1}`).join("\t") + "\n";
+            let rows = rawX.map((x, i) => {
+                let row = [x.toFixed(4), fitResults.yFit[i].toFixed(4)];
+                for (let j = 0; j < centers.length; j++) {
+                    const peakParams = popt.slice(j * stride, (j + 1) * stride);
+                    let yVal = 0;
+                    if (peakType === 'gaussian') yVal = gaussian(x, ...peakParams);
+                    else if (peakType === 'lorentzian') yVal = lorentzian(x, ...peakParams);
+                    else if (peakType === 'voigt') yVal = voigt(x, ...peakParams);
+                    row.push(yVal.toFixed(4));
+                }
+                return row.join("\t");
+            });
+            downloadFile("deconvoluted_peaks.txt", header + rows.join("\n"));
+        }
+    </script>
+</body>
+</html>
