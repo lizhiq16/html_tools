@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GROMACS ITP 文件查看与处理工具</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            height: 100vh;
+            background-color: #f4f6f9;
+            color: #333;
+        }
+        .left-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 15px;
+            border-right: 1px solid #ccc;
+            background-color: #fff;
+        }
+        .left-panel h3 {
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .file-name-badge {
+            font-size: 14px;
+            font-weight: normal;
+            color: #0056b3;
+            background-color: #e9f2ff;
+            padding: 2px 8px;
+            border-radius: 4px;
+            border: 1px solid #b8daff;
+        }
+        /* 代码编辑器带行号的容器 */
+        .editor-container {
+            flex: 1;
+            display: flex;
+            border: 2px dashed #ccc;
+            border-radius: 4px;
+            overflow: hidden;
+            background-color: #fcfcfc;
+            transition: border-color 0.2s, background-color 0.2s;
+        }
+        /* 拖拽文件悬停高亮样式 */
+        .editor-container.drag-over {
+            border-color: #007bff;
+            background-color: #f0f7ff;
+        }
+        .line-numbers {
+            width: 45px;
+            background-color: #f0f0f0;
+            border-right: 1px solid #ddd;
+            color: #888;
+            font-family: "Courier New", Courier, monospace;
+            font-size: 13px;
+            line-height: 1.4;
+            padding: 10px 5px;
+            text-align: right;
+            user-select: none;
+            overflow: hidden;
+        }
+        #editor {
+            flex: 1;
+            font-family: "Courier New", Courier, monospace;
+            font-size: 13px;
+            line-height: 1.4;
+            padding: 10px;
+            border: none;
+            outline: none;
+            resize: none;
+            white-space: pre;
+            overflow: auto;
+            background-color: transparent;
+        }
+        /* 底部光标行列状态栏 */
+        .status-bar {
+            height: 25px;
+            background-color: #eaeaea;
+            border: 1px solid #ccc;
+            border-top: none;
+            border-radius: 0 0 4px 4px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding: 0 10px;
+            font-size: 12px;
+            color: #555;
+            font-family: monospace;
+        }
+        .right-panel {
+            width: 380px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            overflow-y: auto;
+            background-color: #f8f9fa;
+        }
+        .card {
+            background: #fff;
+            padding: 15px;
+            border-radius: 6px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .card h4 {
+            margin-bottom: 10px;
+            color: #0056b3;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+        .btn {
+            display: inline-block;
+            width: 100%;
+            padding: 8px 12px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 5px;
+            transition: background-color 0.2s;
+        }
+        .btn:hover {
+            background-color: #0056b3;
+        }
+        .btn-danger {
+            background-color: #dc3545;
+        }
+        .btn-danger:hover {
+            background-color: #bd2130;
+        }
+        .btn-success {
+            background-color: #28a745;
+        }
+        .btn-success:hover {
+            background-color: #218838;
+        }
+        .file-input-wrapper {
+            margin-bottom: 10px;
+        }
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 5px;
+        }
+        .input-group input {
+            padding: 6px 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        .charge-display {
+            font-size: 18px;
+            font-weight: bold;
+            color: #28a745;
+            margin-top: 5px;
+            word-break: break-all;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 左侧编辑区域 -->
+    <div class="left-panel">
+        <h3>
+            ITP 文件文本编辑器
+            <span id="fileNameDisplay" class="file-name-badge" style="display: none;"></span>
+        </h3>
+        <div class="editor-container" id="editorContainer">
+            <div class="line-numbers" id="lineNumbers">1</div>
+            <textarea id="editor" placeholder="在此直接粘贴文本，或将 ITP 文件拖拽至此..." spellcheck="false"></textarea>
+        </div>
+        <div class="status-bar" id="statusBar">行: 1, 列: 1</div>
+    </div>
+
+    <!-- 右侧功能面板 -->
+    <div class="right-panel">
+        
+        <!-- 文件加载与清空 -->
+        <div class="card">
+            <h4>文件控制</h4>
+            <div class="file-input-wrapper">
+                <input type="file" id="fileInput" accept=".itp,.txt" style="display: none;">
+                <button class="btn" onclick="document.getElementById('fileInput').click()">加载 ITP 文件</button>
+            </div>
+            <button class="btn btn-danger" onclick="clearContent()">清空内容</button>
+        </div>
+
+        <!-- 功能 1：注释 atomtypes -->
+        <div class="card">
+            <h4>1. 注释 [ atomtypes ]</h4>
+            <p style="font-size: 12px; color: #666; margin-bottom: 8px;">包含 [ atomtypes ] 标题行及段落内所有数据行，均在第一列添加 ";" 注释符。</p>
+            <button class="btn" onclick="commentAtomtypes()">注释 [ atomtypes ]</button>
+        </div>
+
+        <!-- 功能 2：电荷统计（8位小数） -->
+        <div class="card">
+            <h4>2. 电荷统计</h4>
+            <p style="font-size: 12px; color: #666;">自动实时统计 [ atoms ] 列表中 charge 列的总和：</p>
+            <div class="charge-display" id="totalCharge">0.00000000</div>
+        </div>
+
+        <!-- 功能 3：批量修改 resname -->
+        <div class="card">
+            <h4>3. 批量修改 resname</h4>
+            <p style="font-size: 12px; color: #666; margin-bottom: 8px;">修改 [ atoms ] 段落中的 resname，自动调整后方列空格，保持总体对齐。</p>
+            <div class="input-group">
+                <input type="text" id="newResname" placeholder="输入新的 resname (例如: LIG)">
+                <button class="btn" onclick="updateResname()">应用修改</button>
+            </div>
+        </div>
+
+        <!-- 功能 4：导出文件 -->
+        <div class="card">
+            <h4>4. 文件导出</h4>
+            <button class="btn btn-success" onclick="exportFile()">导出修改后的 ITP 文件</button>
+        </div>
+
+    </div>
+
+    <script>
+        const editor = document.getElementById('editor');
+        const editorContainer = document.getElementById('editorContainer');
+        const lineNumbers = document.getElementById('lineNumbers');
+        const statusBar = document.getElementById('statusBar');
+        const fileInput = document.getElementById('fileInput');
+        const totalChargeEl = document.getElementById('totalCharge');
+        const fileNameDisplay = document.getElementById('fileNameDisplay');
+        
+        let currentFileName = "modified.itp";
+
+        // 更新文件名称显示
+        function updateFileNameDisplay(name) {
+            if (name) {
+                currentFileName = name;
+                fileNameDisplay.innerText = name;
+                fileNameDisplay.style.display = 'inline-block';
+            } else {
+                currentFileName = "modified.itp";
+                fileNameDisplay.innerText = '';
+                fileNameDisplay.style.display = 'none';
+            }
+        }
+
+        // 更新行号与排版同步
+        function updateLineNumbers() {
+            const lines = editor.value.split('\n');
+            const lineCount = lines.length;
+            let lineNumHTML = '';
+            for (let i = 1; i <= lineCount; i++) {
+                lineNumHTML += i + '<br>';
+            }
+            lineNumbers.innerHTML = lineNumHTML;
+        }
+
+        // 同步滚动行号
+        editor.addEventListener('scroll', () => {
+            lineNumbers.scrollTop = editor.scrollTop;
+        });
+
+        // 监听文本变化
+        editor.addEventListener('input', () => {
+            updateLineNumbers();
+            calculateTotalCharge();
+            updateCursorPosition();
+        });
+
+        // 更新鼠标所在行列号
+        function updateCursorPosition() {
+            const pos = editor.selectionStart;
+            const text = editor.value.substring(0, pos);
+            const lines = text.split('\n');
+            const lineNumber = lines.length;
+            const colNumber = lines[lines.length - 1].length + 1;
+            statusBar.innerText = `行: ${lineNumber}, 列: ${colNumber}`;
+        }
+
+        // 监听鼠标与按键位置变化
+        ['keyup', 'click', 'focus', 'mouseup'].forEach(event => {
+            editor.addEventListener(event, updateCursorPosition);
+        });
+
+        // 通用读取文件逻辑
+        function handleFile(file) {
+            if (!file) return;
+            updateFileNameDisplay(file.name);
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                editor.value = e.target.result;
+                updateLineNumbers();
+                calculateTotalCharge();
+                updateCursorPosition();
+            };
+            reader.readAsText(file);
+        }
+
+        // 1. 通过按钮加载文件
+        fileInput.addEventListener('change', function(e) {
+            handleFile(e.target.files[0]);
+        });
+
+        // 2. 拖拽文件进编辑器载入
+        ['dragenter', 'dragover'].forEach(eventName => {
+            editorContainer.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                editorContainer.classList.add('drag-over');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            editorContainer.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                editorContainer.classList.remove('drag-over');
+            }, false);
+        });
+
+        editorContainer.addEventListener('drop', (e) => {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            if (files && files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+
+        // 清空内容
+        function clearContent() {
+            editor.value = '';
+            fileInput.value = '';
+            updateFileNameDisplay('');
+            updateLineNumbers();
+            calculateTotalCharge();
+            updateCursorPosition();
+        }
+
+        // 帮助函数：分割成行
+        function getLines() {
+            return editor.value.split('\n');
+        }
+
+        // 帮助函数：判断是否是 Section 标题，如 [ atoms ]
+        function getSectionHeader(line) {
+            const cleanLine = line.trim();
+            if (cleanLine.startsWith('[') && cleanLine.endsWith(']')) {
+                return cleanLine.slice(1, -1).trim().toLowerCase();
+            }
+            return null;
+        }
+
+        // 功能 1：为 [ atomtypes ] 及其所属数据行加注释 ";"
+        function commentAtomtypes() {
+            const lines = getLines();
+            let inAtomtypes = false;
+            
+            const updatedLines = lines.map(line => {
+                const sec = getSectionHeader(line);
+                if (sec) {
+                    inAtomtypes = (sec === 'atomtypes');
+                    // 如果标题行就是 [ atomtypes ]，且未被注释，则将标题行也注释
+                    if (inAtomtypes) {
+                        const trimmed = line.trim();
+                        if (!trimmed.startsWith(';')) {
+                            return ';' + line;
+                        }
+                    }
+                    return line;
+                }
+                
+                if (inAtomtypes) {
+                    const trimmed = line.trim();
+                    if (trimmed.length > 0 && !trimmed.startsWith(';')) {
+                        return ';' + line;
+                    }
+                }
+                return line;
+            });
+
+            editor.value = updatedLines.join('\n');
+            updateLineNumbers();
+            calculateTotalCharge();
+        }
+
+        // 功能 2：统计 [ atoms ] 字段下 charge 列的电荷之和（8位小数）
+        function calculateTotalCharge() {
+            const lines = getLines();
+            let inAtoms = false;
+            let sum = 0;
+            let foundAtoms = false;
+
+            for (let line of lines) {
+                const sec = getSectionHeader(line);
+                if (sec) {
+                    inAtoms = (sec === 'atoms');
+                    continue;
+                }
+
+                if (inAtoms) {
+                    const trimmed = line.trim();
+                    if (trimmed.length === 0 || trimmed.startsWith(';')) continue;
+
+                    foundAtoms = true;
+                    const tokens = trimmed.split(/\s+/);
+                    // charge 在第 7 列 (索引 6)
+                    if (tokens.length >= 7) {
+                        const chargeVal = parseFloat(tokens[6]);
+                        if (!isNaN(chargeVal)) {
+                            sum += chargeVal;
+                        }
+                    }
+                }
+            }
+
+            if (foundAtoms) {
+                totalChargeEl.innerText = sum.toFixed(9);
+            } else {
+                totalChargeEl.innerText = "0.00000000";
+            }
+        }
+
+        // 功能 3：修改 [ atoms ] 下 resname，增长时优先减少后面列对应的空格
+        function updateResname() {
+            const newRes = document.getElementById('newResname').value;
+            if (!newRes) {
+                alert('请输入新的 resname！');
+                return;
+            }
+
+            const lines = getLines();
+            let inAtoms = false;
+
+            const updatedLines = lines.map(line => {
+                const sec = getSectionHeader(line);
+                if (sec) {
+                    inAtoms = (sec === 'atoms');
+                    return line;
+                }
+
+                if (inAtoms) {
+                    const trimmed = line.trim();
+                    if (trimmed.length === 0 || trimmed.startsWith(';')) return line;
+
+                    // 匹配捕获：
+                    // match[1]: 前三列及其前面的格式信息 (保持前置缩进与列间距)
+                    // match[2]: 第 4 列与第 5 列之间的空格
+                    // match[3]: 第 4 列原 resname
+                    // match[4]: 第 5 列及之后的内容
+                    const match = line.match(/^(\s*\S+\s+\S+\s+\S+\s+)(\S+)(\s+)(.*)$/);
+                    if (match) {
+                        const prefix = match[1];      // 包含前三列 + resname 前面的空格
+                        const oldRes = match[2];      // 原 resname
+                        let spaceAfter = match[3];    // resname 后面（第 4 列与第 5 列间）的空格
+                        const suffix = match[4];      // 后续剩余所有列
+
+                        const lenDiff = newRes.length - oldRes.length;
+
+                        if (lenDiff > 0) {
+                            // 新名称变长：从【后面】的空格中减去增加的长度
+                            if (spaceAfter.length >= lenDiff) {
+                                spaceAfter = spaceAfter.slice(0, spaceAfter.length - lenDiff);
+                            } else {
+                                spaceAfter = " "; // 至少保留一个空格分隔
+                            }
+                        } else if (lenDiff < 0) {
+                            // 新名称变短：在【后面】补充空格以保持后续列对齐
+                            spaceAfter += ' '.repeat(Math.abs(lenDiff));
+                        }
+
+                        return prefix + newRes + spaceAfter + suffix;
+                    }
+                }
+                return line;
+            });
+
+            editor.value = updatedLines.join('\n');
+            updateLineNumbers();
+            calculateTotalCharge();
+        }
+
+        // 功能 4：导出文件
+        function exportFile() {
+            const text = editor.value;
+            if (!text.trim()) {
+                alert('文本内容为空，无法导出！');
+                return;
+            }
+
+            const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = currentFileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // 初始化显示
+        updateLineNumbers();
+    </script>
+</body>
+</html>
