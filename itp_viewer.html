@@ -200,7 +200,7 @@
         <!-- 功能 1：注释 atomtypes -->
         <div class="card">
             <h4>1. 注释 [ atomtypes ]</h4>
-            <p style="font-size: 12px; color: #666; margin-bottom: 8px;">包含 [ atomtypes ] 标题行及段落内所有数据行，均在第一列添加 ";" 注释符。</p>
+            <p style="font-size: 12px; color: #666; margin-bottom: 8px;">给 [ atomtypes ] 段落所有行添加 ";" 注释符。</p>
             <button class="btn" onclick="commentAtomtypes()">注释 [ atomtypes ]</button>
         </div>
 
@@ -214,7 +214,7 @@
         <!-- 功能 3：批量修改 resname -->
         <div class="card">
             <h4>3. 批量修改 resname</h4>
-            <p style="font-size: 12px; color: #666; margin-bottom: 8px;">修改 [ atoms ] 段落中的 resname，自动调整后方列空格，保持总体对齐。</p>
+            <p style="font-size: 12px; color: #666; margin-bottom: 8px;">修改 [ atoms ] 段落中的 resname，保留原格式，字符长度不超5。</p>
             <div class="input-group">
                 <input type="text" id="newResname" placeholder="输入新的 resname (例如: LIG)">
                 <button class="btn" onclick="updateResname()">应用修改</button>
