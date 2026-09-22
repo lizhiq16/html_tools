@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>OLED器件能级结构图绘制工具</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, sans-serif;
+      display: flex;
+      height: 100vh;
+      background-color: #f4f6f9;
+      color: #333;
+    }
+    #sidebar {
+      width: 450px;
+      min-width: 450px;
+      background: #ffffff;
+      border-right: 1px solid #e0e0e0;
+      overflow-y: auto;
+      padding: 20px;
+      box-shadow: 2px 0 8px rgba(0,0,0,0.05);
+    }
+    #canvas-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      position: relative;
+      background-color: #f8fafc;
+      overflow: auto; /* 支持超长图像横向滚动 */
+    }
+    canvas {
+      background: #ffffff;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      border-radius: 8px;
+    }
+    h2, h3 { margin-top: 0; color: #1e293b; font-size: 16px; }
+    .section {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 15px;
+    }
+    .form-group {
+      display: flex;
+      align-items: center;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+    .form-group label {
+      width: 140px;
+      font-weight: 500;
+      color: #475569;
+    }
+    .form-group input, .form-group select {
+      flex: 1;
+      padding: 4px 8px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .form-group input[type="checkbox"] { flex: 0; }
+    .btn {
+      background: #2563eb;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: background 0.2s;
+    }
+    .btn:hover { background: #1d4ed8; }
+    .btn-danger { background: #ef4444; }
+    .btn-danger:hover { background: #dc2626; }
+    .btn-secondary { background: #64748b; }
+    .btn-secondary:hover { background: #475569; }
+    .btn-sm { padding: 3px 8px; font-size: 11px; }
+    .btn-success { background: #10b981; }
+    .btn-success:hover { background: #059669; }
+
+    .layer-card {
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      padding: 10px;
+      background: #ffffff;
+      margin-bottom: 10px;
+    }
+    .layer-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+      font-weight: bold;
+      color: #0f172a;
+    }
+    .layer-title-box {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .order-input {
+      width: 45px !important;
+      padding: 2px 4px !important;
+      text-align: center;
+      font-weight: bold;
+    }
+    .layer-actions {
+      display: flex;
+      gap: 4px;
+    }
+    .pos-info {
+      font-size: 12px;
+      color: #2563eb;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 4px;
+      padding: 4px 8px;
+      margin-bottom: 8px;
+      font-weight: 500;
+    }
+    .toolbar {
+      margin-bottom: 15px;
+      display: flex;
+      gap: 10px;
+    }
+    .tip {
+      font-size: 12px;
+      color: #64748b;
+      margin-top: 5px;
+    }
+  </style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h2>OLED器件能级图配置</h2>
+  
+  <div class="toolbar">
+    <button class="btn" onclick="exportPNG()">导出 PNG</button>
+    <button class="btn" style="background:#059669;" onclick="exportSVG()">导出 SVG 矢量图</button>
+    <button class="btn btn-secondary" onclick="resetPositions()">重置位置</button>
+  </div>
+
+  <div class="section">
+    <h3>全局与显示控制</h3>
+    <div class="form-group">
+      <label>显示背景能级虚线</label>
+      <input type="checkbox" id="showDashLines" checked onchange="draw()">
+    </div>
+    <div class="form-group">
+      <label>Y轴上限 (eV)</label>
+      <input type="number" id="yMax" value="-1.0" step="0.5" onchange="draw()">
+    </div>
+    <div class="form-group">
+      <label>Y轴下限 (eV)</label>
+      <input type="number" id="yMin" value="-7.0" step="0.5" onchange="draw()">
+    </div>
+    <div class="form-group">
+      <label>刻度步长 (eV)</label>
+      <input type="number" id="yStep" value="1.0" step="0.1" onchange="draw()">
+    </div>
+    <div class="form-group">
+      <label>默认层间距 (px)</label>
+      <input type="number" id="layerGap" value="15" min="0" max="100" onchange="draw()">
+    </div>
+    <div class="form-group">
+      <label>坐标轴字号</label>
+      <input type="number" id="axisFontSize" value="22" onchange="draw()">
+    </div>
+    <div class="form-group">
+      <label>轴标签横向偏移 (px)</label>
+      <input type="number" id="axisLabelDx" value="0" onchange="updateAxisOffset('label', this.value)">
+    </div>
+    <div class="form-group">
+      <label>刻度数字横向偏移 (px)</label>
+      <input type="number" id="axisTicksDx" value="0" onchange="updateAxisOffset('ticks', this.value)">
+    </div>
+    <div class="form-group">
+      <label>材料名字号</label>
+      <input type="number" id="labelFontSize" value="21" onchange="draw()">
+    </div>
+    <div class="form-group">
+      <label>数值字号</label>
+      <input type="number" id="valFontSize" value="21" onchange="draw()">
+    </div>
+  </div>
+
+  <div class="section">
+    <h3>材料层管理</h3>
+    <div id="layersList"></div>
+    <button class="btn" onclick="addLayer()" style="width: 100%;">+ 在结尾添加材料层</button>
+  </div>
+</div>
+
+<div id="canvas-container">
+  <canvas id="energyCanvas" width="760" height="600"></canvas>
+  <div class="tip">💡 提示：按住鼠标左键拖动<b>坐标轴标签/数字/能级数值</b>可平移调节。</div>
+</div>
+
+<script>
+const DEFAULT_COLORS = ['#fde047', '#bfdbfe', '#e0f2fe', '#0ea5e9', '#fdba74', '#fca5a5'];
+
+let config = {
+  showDashLines: true,
+  yMax: -1.0,
+  yMin: -7.0,
+  yStep: 1.0,
+  layerGap: 15,
+  axisFontSize: 20,
+  labelFontSize: 16,
+  valFontSize: 16,
+  
+  // Y轴左右平移偏移
+  axisPos: {
+    labelDx: 0,
+    ticksDx: 0
+  },
+
+  layers: [
+    { id: '1', type: 'line', name: 'ITO', thickness: '', showThickness: false, thicknessPos: 'side', energy: -5.0, width: 40, color: '#000000', xOffset: 0, textVertical: false, labelPos:{dx:0,dy:3}, valPos:{dx:0,dy:-2} },
+    { id: '2', type: 'line', name: 'HATCN', thickness: '', showThickness: false, thicknessPos: 'side', energy: -5.7, width: 40, color: '#000000', xOffset: 0, textVertical: false, labelPos:{dx:0,dy:3}, valPos:{dx:0,dy:-2} },
+    { id: '3', type: 'box', name: 'TAPC', thickness: '50', showThickness: true, thicknessPos: 'side', homo: -5.5, lumo: -2.0, width: 50, color: '#fde047', xOffset: 0, textVertical: true, labelPos:{dx:0,dy:0}, homoPos:{dx:0,dy:2}, lumoPos:{dx:0,dy:-2} },
+    { id: '4', type: 'box', name: 'SiCzCz', thickness: '10', showThickness: true, thicknessPos: 'side', homo: -5.6, lumo: -1.9, width: 50, color: '#bfdbfe', xOffset: 0, textVertical: true, labelPos:{dx:0,dy:0}, homoPos:{dx:0,dy:2}, lumoPos:{dx:0,dy:-2} },
+    { id: '5', type: 'dashed_box', name: 'SiCzCz', thickness: '', showThickness: false, thicknessPos: 'side', homo: -6.0, lumo: -1.8, width: 110, color: '#333333', xOffset: 0, textVertical: false, labelPos:{dx:0,dy:-150}, homoPos:{dx:0,dy:1}, lumoPos:{dx:0,dy:-2}},
+    { id: '6', type: 'box', name: 'p4TCzPhBN', thickness: '24', showThickness: true, thicknessPos: 'side', homo: -5.7, lumo: -2.8, width: 90, color: '#e0f2fe', xOffset: -100, textVertical: true, labelPos:{dx:-26,dy:0}, homoPos:{dx:-10,dy:2}, lumoPos:{dx:-10,dy:-2} },
+    { id: '7', type: 'box', name: 'BN-CO', thickness: '', showThickness: false, thicknessPos: 'side', homo: -5.3, lumo: -3.1, width: 35, color: '#0ea5e9', xOffset: -63, textVertical: true, labelPos:{dx:0,dy:0} },
+    { id: '8', type: 'box', name: 'SiTrZCz2', thickness: '10', showThickness: true, thicknessPos: 'side', homo: -6.0, lumo: -2.8, width: 50, color: '#fdba74', xOffset: 0, textVertical: true, labelPos:{dx:0,dy:0}, homoPos:{dx:0,dy:2}, lumoPos:{dx:0,dy:-2} },
+    { id: '9', type: 'box', name: 'DPPyA', thickness: '30', showThickness: true, thicknessPos: 'side', homo: -5.9, lumo: -3.0, width: 50, color: '#fca5a5', xOffset: 0, textVertical: true, labelPos:{dx:0,dy:0}, homoPos:{dx:0,dy:2}, lumoPos:{dx:0,dy:-2} },
+    { id: '10', type: 'line', name: 'LiF/Al', thickness: '', showThickness: false, thicknessPos: 'side', energy: -2.9, width: 40, color: '#000000', xOffset: 0, textVertical: false, labelPos:{dx:0,dy:3}, valPos:{dx:0,dy:-2} }
+  ]
+};
+
+const canvas = document.getElementById('energyCanvas');
+const ctx = canvas.getContext('2d');
+
+let textHitBoxes = [];
+let boxHitBoxes = [];
+let draggedTarget = null;
+let dragStartX = 0, dragStartY = 0;
+
+function init() {
+  draw();
+  renderControls();
+  setupCanvasInteraction();
+}
+
+// 计算每层具体 X 轴坐标及最大右边界
+function calculateLayerPositions() {
+  const margin = { left: 120 }; // 留白区域
+  let currentX = margin.left + 30;
+  const positions = [];
+  let maxEndX = currentX;
+
+  config.layers.forEach((layer) => {
+    const startX = currentX + (layer.xOffset || 0);
+    const endX = startX + layer.width;
+    positions.push({ startX, endX, width: layer.width });
+    if (endX > maxEndX) {
+      maxEndX = endX;
+    }
+    currentX = startX + layer.width + config.layerGap;
+  });
+
+  return { positions, maxEndX };
+}
+
+function getFormattedName(layer) {
+  let name = layer.name || '';
+  if (layer.showThickness && layer.thickness !== undefined && layer.thickness !== '') {
+    const thickText = `(${layer.thickness} nm)`;
+    if (layer.thicknessPos === 'side') {
+      name += ` ${thickText}`;
+    } else {
+      name += `\n${thickText}`;
+    }
+  }
+  return name;
+}
+
+function draw() {
+  config.showDashLines = document.getElementById('showDashLines').checked;
+  config.yMax = parseFloat(document.getElementById('yMax').value);
+  config.yMin = parseFloat(document.getElementById('yMin').value);
+  config.yStep = parseFloat(document.getElementById('yStep').value);
+  config.layerGap = parseFloat(document.getElementById('layerGap').value);
+  config.axisFontSize = parseInt(document.getElementById('axisFontSize').value);
+  config.labelFontSize = parseInt(document.getElementById('labelFontSize').value);
+  config.valFontSize = parseInt(document.getElementById('valFontSize').value);
+
+  // 1. 计算材料层的物理布局与最右边界
+  const { positions: layerXPositions, maxEndX } = calculateLayerPositions();
+
+  // 2. 根据材料层范围自适应计算 Canvas 理想宽度（留出右侧 margin）
+  const minWidth = 760;
+  const dynamicWidth = Math.max(minWidth, Math.ceil(maxEndX + 60));
+  
+  if (canvas.width !== dynamicWidth) {
+    canvas.width = dynamicWidth;
+  }
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  textHitBoxes = [];
+  boxHitBoxes = [];
+
+  const margin = { top: 60, right: 30, bottom: 50, left: 120 };
+  const graphHeight = canvas.height - margin.top - margin.bottom;
+
+  const getCanvasY = (val) => margin.top + ((val - config.yMax) / (config.yMin - config.yMax)) * graphHeight;
+
+  // 3. 背景虚线（自适应延伸至画布最右边缘）
+  if (config.showDashLines) {
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.setLineDash([4, 4]);
+    ctx.lineWidth = 1;
+    for (let ev = config.yMax; ev >= config.yMin; ev -= config.yStep) {
+      const y = getCanvasY(ev);
+      ctx.beginPath();
+      ctx.moveTo(margin.left, y);
+      ctx.lineTo(canvas.width - margin.right, y);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
+  // 4. Y 轴
+  const axisX = margin.left;
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(axisX, margin.top - 20);
+  ctx.lineTo(axisX, canvas.height - margin.bottom);
+  ctx.stroke();
+
+  // Y 轴箭头
+  ctx.beginPath();
+  ctx.fillStyle = '#000000';
+  ctx.moveTo(axisX, margin.top - 25);
+  ctx.lineTo(axisX - 6, margin.top - 15);
+  ctx.lineTo(axisX + 6, margin.top - 15);
+  ctx.fill();
+
+  // Y 轴刻度数字
+  for (let ev = config.yMax; ev >= config.yMin; ev -= config.yStep) {
+    const y = getCanvasY(ev);
+    drawDraggableText('axis_ticks', ev.toFixed(1), axisX - 30, y, config.axisFontSize, '#000000', 'normal', {dx: config.axisPos.ticksDx, dy: 0}, false);
+  }
+
+  // Y 轴标题
+  drawDraggableText('axis_label', 'Energy Level (eV)', axisX - 76, margin.top + graphHeight / 2, config.axisFontSize + 2, '#000000', 'bold', {dx: config.axisPos.labelDx, dy: 0}, true);
+
+  // 5. 绘制各层
+  config.layers.forEach((layer, index) => {
+    const pos = layerXPositions[index];
+    const formattedName = getFormattedName(layer);
+
+    if (layer.type === 'line') {
+      const y = getCanvasY(layer.energy);
+      ctx.strokeStyle = layer.color || '#000000';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(pos.startX, y);
+      ctx.lineTo(pos.endX, y);
+      ctx.stroke();
+
+      boxHitBoxes.push({ id: layer.id, x: pos.startX, y: y - 10, width: pos.width, height: 20 });
+
+      drawDraggableText(`layer_${layer.id}_name`, formattedName, pos.startX + pos.width / 2, y + 20, config.labelFontSize, '#000000', 'bold', layer.labelPos, layer.textVertical);
+      drawDraggableText(`layer_${layer.id}_val`, layer.energy.toFixed(1), pos.startX + pos.width / 2, y - 12, config.valFontSize, '#000000', 'normal', layer.valPos, false);
+
+    } else if (layer.type === 'box' || layer.type === 'dashed_box') {
+      const yLumo = getCanvasY(layer.lumo);
+      const yHomo = getCanvasY(layer.homo);
+      const height = yHomo - yLumo;
+
+      ctx.save();
+      if (layer.type === 'dashed_box') {
+        ctx.setLineDash([5, 5]);
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(pos.startX, yLumo, pos.width, height);
+      } else {
+        ctx.fillStyle = layer.color;
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 1.5;
+        ctx.fillRect(pos.startX, yLumo, pos.width, height);
+        ctx.strokeRect(pos.startX, yLumo, pos.width, height);
+      }
+      ctx.restore();
+
+      boxHitBoxes.push({ id: layer.id, x: pos.startX, y: yLumo, width: pos.width, height: height });
+
+      drawDraggableText(`layer_${layer.id}_name`, formattedName, pos.startX + pos.width / 2, yLumo + height / 2, config.labelFontSize, '#000000', 'bold', layer.labelPos, layer.textVertical);
+
+      if (layer.homo !== undefined) {
+        drawDraggableText(`layer_${layer.id}_homo`, layer.homo.toFixed(1), pos.startX + pos.width / 2, yHomo + 15, config.valFontSize, '#000000', 'normal', layer.homoPos, false);
+      }
+      if (layer.lumo !== undefined) {
+        drawDraggableText(`layer_${layer.id}_lumo`, layer.lumo.toFixed(1), pos.startX + pos.width / 2, yLumo - 12, config.valFontSize, '#000000', 'normal', layer.lumoPos, false);
+      }
+    }
+  });
+
+  updatePosInfoUI(layerXPositions);
+}
+
+function drawDraggableText(id, text, baseX, baseY, fontSize, color, weight = 'normal', offset = {dx:0, dy:0}, isVertical = false) {
+  const dx = offset ? offset.dx || 0 : 0;
+  const dy = offset ? offset.dy || 0 : 0;
+  const x = baseX + dx;
+  const y = baseY + dy;
+
+  ctx.save();
+  ctx.font = `${weight} ${fontSize}px Arial, sans-serif`;
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const lines = text.split('\n');
+  const lineHeight = fontSize * 1.2;
+  const totalHeight = lines.length * lineHeight;
+
+  ctx.translate(x, y);
+  if (isVertical) ctx.rotate(-Math.PI / 2);
+
+  lines.forEach((line, idx) => {
+    const lineY = - (totalHeight / 2) + (idx + 0.5) * lineHeight;
+    ctx.fillText(line, 0, lineY);
+  });
+
+  const metrics = ctx.measureText(lines[0]);
+  let w = metrics.width + 8;
+  let h = totalHeight + 6;
+  if (isVertical) { let tmp = w; w = h; h = tmp; }
+
+  textHitBoxes.push({ id, x: x - w / 2, y: y - h / 2, width: w, height: h, offset });
+  ctx.restore();
+}
+
+function renderControls() {
+  const container = document.getElementById('layersList');
+  container.innerHTML = '';
+  const { positions } = calculateLayerPositions();
+
+  config.layers.forEach((layer, idx) => {
+    const card = document.createElement('div');
+    card.className = 'layer-card';
+
+    let energyFields = '';
+    if (layer.type === 'line') {
+      energyFields = `<div class="form-group"><label>能级 (eV)</label><input type="number" step="0.1" value="${layer.energy}" onchange="updateLayer('${layer.id}', 'energy', this.value)"></div>`;
+    } else {
+      energyFields = `
+        <div class="form-group"><label>LUMO (eV)</label><input type="number" step="0.1" value="${layer.lumo}" onchange="updateLayer('${layer.id}', 'lumo', this.value)"></div>
+        <div class="form-group"><label>HOMO (eV)</label><input type="number" step="0.1" value="${layer.homo}" onchange="updateLayer('${layer.id}', 'homo', this.value)"></div>
+      `;
+    }
+
+    const pos = positions[idx];
+    const posText = pos ? `${pos.startX.toFixed(1)}px ~ ${pos.endX.toFixed(1)}px` : 'N/A';
+
+    card.innerHTML = `
+      <div class="layer-header">
+        <div class="layer-title-box">
+          #<input type="number" class="order-input" value="${idx + 1}" min="1" max="${config.layers.length}" onchange="changeLayerOrder(${idx}, this.value)">
+          <span>${layer.name}</span>
+        </div>
+        <div class="layer-actions">
+          <button class="btn btn-sm btn-success" onclick="insertLayerAfter(${idx})">+ 插入</button>
+          <button class="btn btn-sm btn-secondary" onclick="cloneLayer(${idx})">复制</button>
+          <button class="btn btn-sm btn-danger" onclick="removeLayer('${layer.id}')">删除</button>
+        </div>
+      </div>
+      <div class="pos-info" id="pos-info-${layer.id}">📍 X 范围: [ ${posText} ]</div>
+      <div class="form-group">
+        <label>类型</label>
+        <select onchange="updateLayer('${layer.id}', 'type', this.value)">
+          <option value="box" ${layer.type === 'box' ? 'selected' : ''}>矩形块 (Box)</option>
+          <option value="line" ${layer.type === 'line' ? 'selected' : ''}>单线电极 (Line)</option>
+          <option value="dashed_box" ${layer.type === 'dashed_box' ? 'selected' : ''}>虚线外框 (Host)</option>
+        </select>
+      </div>
+      <div class="form-group"><label>名称标签</label><input type="text" value="${layer.name}" onchange="updateLayer('${layer.id}', 'name', this.value)"></div>
+      
+      <div class="form-group">
+        <label>材料厚度 (nm)</label>
+        <input type="text" value="${layer.thickness || ''}" placeholder="例如: 30" onchange="updateLayer('${layer.id}', 'thickness', this.value)">
+      </div>
+      <div class="form-group">
+        <label>显示厚度</label>
+        <input type="checkbox" ${layer.showThickness ? 'checked' : ''} onchange="updateLayer('${layer.id}', 'showThickness', this.checked)">
+      </div>
+      <div class="form-group">
+        <label>厚度显示位置</label>
+        <select onchange="updateLayer('${layer.id}', 'thicknessPos', this.value)">
+          <option value="side" ${layer.thicknessPos === 'side' ? 'selected' : ''}>名称右侧 (同行)</option>
+          <option value="below" ${layer.thicknessPos === 'below' ? 'selected' : ''}>名称下方 (换行)</option>
+        </select>
+      </div>
+
+      ${energyFields}
+      <div class="form-group"><label>宽度 (px)</label><input type="number" value="${layer.width}" onchange="updateLayer('${layer.id}', 'width', this.value)"></div>
+      <div class="form-group"><label>X 轴偏移 (px)</label><input type="number" value="${layer.xOffset || 0}" onchange="updateLayer('${layer.id}', 'xOffset', this.value)"></div>
+      <div class="form-group"><label>名称垂直显示</label><input type="checkbox" ${layer.textVertical ? 'checked' : ''} onchange="updateLayer('${layer.id}', 'textVertical', this.checked)"></div>
+      ${layer.type === 'box' ? `<div class="form-group"><label>颜色</label><input type="color" value="${layer.color}" onchange="updateLayer('${layer.id}', 'color', this.value)"></div>` : ''}
+    `;
+    container.appendChild(card);
+  });
+}
+
+function updatePosInfoUI(positions) {
+  config.layers.forEach((layer, idx) => {
+    const elem = document.getElementById(`pos-info-${layer.id}`);
+    if (elem && positions[idx]) {
+      const pos = positions[idx];
+      elem.innerText = `📍 X 范围: [ ${pos.startX.toFixed(1)}px ~ ${pos.endX.toFixed(1)}px ]`;
+    }
+  });
+}
+
+function updateLayer(id, key, value) {
+  const layer = config.layers.find(l => l.id === id);
+  if (layer) {
+    if (['energy', 'homo', 'lumo', 'width', 'xOffset'].includes(key)) {
+      layer[key] = parseFloat(value) || 0;
+    } else {
+      layer[key] = value;
+    }
+    renderControls();
+    draw();
+  }
+}
+
+function changeLayerOrder(oldIndex, newOrderStr) {
+  let newIndex = parseInt(newOrderStr) - 1;
+  if (isNaN(newIndex)) return;
+  if (newIndex < 0) newIndex = 0;
+  if (newIndex >= config.layers.length) newIndex = config.layers.length - 1;
+
+  const target = config.layers.splice(oldIndex, 1)[0];
+  config.layers.splice(newIndex, 0, target);
+
+  renderControls();
+  draw();
+}
+
+function insertLayerAfter(index) {
+  const id = Date.now().toString();
+  const color = DEFAULT_COLORS[(index + 1) % DEFAULT_COLORS.length];
+  const newLayer = {
+    id, type: 'box', name: 'New Layer', thickness: '20', showThickness: true, thicknessPos: 'side', homo: -5.5, lumo: -2.5, width: 50, color, xOffset: 0, textVertical: false,
+    labelPos:{dx:0,dy:0}, homoPos:{dx:0,dy:15}, lumoPos:{dx:0,dy:-12}
+  };
+  config.layers.splice(index + 1, 0, newLayer);
+  renderControls();
+  draw();
+}
+
+function cloneLayer(index) {
+  const src = config.layers[index];
+  const cloned = JSON.parse(JSON.stringify(src));
+  cloned.id = Date.now().toString();
+  cloned.name = `${src.name} (Copy)`;
+  config.layers.splice(index + 1, 0, cloned);
+  renderControls();
+  draw();
+}
+
+function addLayer() {
+  insertLayerAfter(config.layers.length - 1);
+}
+
+function removeLayer(id) {
+  config.layers = config.layers.filter(l => l.id !== id);
+  renderControls();
+  draw();
+}
+
+function updateAxisOffset(type, val) {
+  if (type === 'label') config.axisPos.labelDx = parseFloat(val) || 0;
+  if (type === 'ticks') config.axisPos.ticksDx = parseFloat(val) || 0;
+  draw();
+}
+
+function resetPositions() {
+  config.axisPos = { labelDx: 0, ticksDx: 0 };
+  document.getElementById('axisLabelDx').value = 0;
+  document.getElementById('axisTicksDx').value = 0;
+
+  config.layers.forEach(l => {
+    l.xOffset = 0;
+    l.labelPos = {dx:0, dy:0};
+    l.valPos = {dx:0, dy:0};
+    l.homoPos = {dx:0, dy:0};
+    l.lumoPos = {dx:0, dy:0};
+  });
+  renderControls();
+  draw();
+}
+
+function setupCanvasInteraction() {
+  canvas.addEventListener('mousedown', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    for (let box of textHitBoxes) {
+      if (mouseX >= box.x && mouseX <= box.x + box.width && mouseY >= box.y && mouseY <= box.y + box.height) {
+        draggedTarget = { type: 'text', data: box };
+        dragStartX = mouseX;
+        dragStartY = mouseY;
+        canvas.style.cursor = 'grabbing';
+        return;
+      }
+    }
+
+    for (let box of boxHitBoxes) {
+      if (mouseX >= box.x && mouseX <= box.x + box.width && mouseY >= box.y && mouseY <= box.y + box.height) {
+        const layer = config.layers.find(l => l.id === box.id);
+        if (layer) {
+          draggedTarget = { type: 'box', layer };
+          dragStartX = mouseX;
+          canvas.style.cursor = 'ew-resize';
+          return;
+        }
+      }
+    }
+  });
+
+  canvas.addEventListener('mousemove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    if (draggedTarget) {
+      if (draggedTarget.type === 'text') {
+        const dx = mouseX - dragStartX;
+        const dy = mouseY - dragStartY;
+        const box = draggedTarget.data;
+        
+        // 坐标轴限制水平移动
+        if (box.id === 'axis_label') {
+          config.axisPos.labelDx += dx;
+          document.getElementById('axisLabelDx').value = Math.round(config.axisPos.labelDx);
+        } else if (box.id === 'axis_ticks') {
+          config.axisPos.ticksDx += dx;
+          document.getElementById('axisTicksDx').value = Math.round(config.axisPos.ticksDx);
+        } else {
+          if (!box.offset) box.offset = { dx: 0, dy: 0 };
+          box.offset.dx += dx;
+          box.offset.dy += dy;
+          syncTextOffsetToConfig(box.id, box.offset);
+        }
+
+        dragStartX = mouseX;
+        dragStartY = mouseY;
+        canvas.style.cursor = 'grabbing';
+      } else if (draggedTarget.type === 'box') {
+        const dx = mouseX - dragStartX;
+        draggedTarget.layer.xOffset = (draggedTarget.layer.xOffset || 0) + dx;
+        dragStartX = mouseX;
+        const offsetInput = document.querySelector(`input[onchange*="'${draggedTarget.layer.id}', 'xOffset'"]`);
+        if (offsetInput) offsetInput.value = draggedTarget.layer.xOffset;
+        canvas.style.cursor = 'ew-resize';
+      }
+      draw();
+    } else {
+      let isText = textHitBoxes.some(box => mouseX >= box.x && mouseX <= box.x + box.width && mouseY >= box.y && mouseY <= box.y + box.height);
+      let isBox = boxHitBoxes.some(box => mouseX >= box.x && mouseX <= box.x + box.width && mouseY >= box.y && mouseY <= box.y + box.height);
+      
+      // 恢复原版光标逻辑：文字显示手型，方框显示左右扩展
+      if (isText) canvas.style.cursor = 'pointer';
+      else if (isBox) canvas.style.cursor = 'ew-resize';
+      else canvas.style.cursor = 'default';
+    }
+  });
+
+  window.addEventListener('mouseup', () => {
+    draggedTarget = null;
+    canvas.style.cursor = 'default';
+  });
+}
+
+function syncTextOffsetToConfig(id, offset) {
+  if (id.startsWith('layer_')) {
+    const parts = id.split('_');
+    const layerId = parts[1];
+    const target = parts[2];
+    const layer = config.layers.find(l => l.id === layerId);
+    if (layer) {
+      if (target === 'name') layer.labelPos = offset;
+      if (target === 'val') layer.valPos = offset;
+      if (target === 'homo') layer.homoPos = offset;
+      if (target === 'lumo') layer.lumoPos = offset;
+    }
+  }
+}
+
+// 导出 PNG
+function exportPNG() {
+  const link = document.createElement('a');
+  link.download = 'OLED_Energy_Level.png';
+  link.href = canvas.toDataURL('image/png', 1.0);
+  link.click();
+}
+
+// 导出 SVG
+function exportSVG() {
+  const { positions: layerXPositions, maxEndX } = calculateLayerPositions();
+  const minWidth = 760;
+  const w = Math.max(minWidth, Math.ceil(maxEndX + 60));
+  const h = canvas.height;
+
+  const margin = { top: 60, right: 30, bottom: 50, left: 120 };
+  const graphHeight = h - margin.top - margin.bottom;
+  const getCanvasY = (val) => margin.top + ((val - config.yMax) / (config.yMin - config.yMax)) * graphHeight;
+
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`;
+  svg += `<style>text{font-family:Arial,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,sans-serif;}</style>`;
+  svg += `<rect width="100%" height="100%" fill="#ffffff"/>`;
+
+  if (config.showDashLines) {
+    for (let ev = config.yMax; ev >= config.yMin; ev -= config.yStep) {
+      const y = getCanvasY(ev);
+      svg += `<line x1="${margin.left}" y1="${y}" x2="${w - margin.right}" y2="${y}" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="4,4"/>`;
+    }
+  }
+
+  const axisX = margin.left;
+  svg += `<line x1="${axisX}" y1="${margin.top - 20}" x2="${axisX}" y2="${h - margin.bottom}" stroke="#000000" stroke-width="3"/>`;
+  svg += `<polygon points="${axisX},${margin.top - 25} ${axisX - 6},${margin.top - 15} ${axisX + 6},${margin.top - 15}" fill="#000000"/>`;
+
+  // 刻度数字
+  for (let ev = config.yMax; ev >= config.yMin; ev -= config.yStep) {
+    const y = getCanvasY(ev);
+    svg += generateSVGText(ev.toFixed(1), axisX - 30 + config.axisPos.ticksDx, y, config.axisFontSize, 'normal', false);
+  }
+
+  // Y轴名称
+  const labelX = axisX - 76 + config.axisPos.labelDx;
+  const labelY = margin.top + graphHeight / 2;
+  svg += generateSVGText('Energy Level (eV)', labelX, labelY, config.axisFontSize + 2, 'bold', true);
+
+  config.layers.forEach((layer, index) => {
+    const pos = layerXPositions[index];
+    const formattedName = getFormattedName(layer);
+
+    if (layer.type === 'line') {
+      const y = getCanvasY(layer.energy);
+      svg += `<line x1="${pos.startX}" y1="${y}" x2="${pos.endX}" y2="${y}" stroke="${layer.color || '#000000'}" stroke-width="3"/>`;
+      svg += generateSVGText(formattedName, pos.startX + pos.width/2 + (layer.labelPos?.dx||0), y + 20 + (layer.labelPos?.dy||0), config.labelFontSize, 'bold', layer.textVertical);
+      svg += generateSVGText(layer.energy.toFixed(1), pos.startX + pos.width/2 + (layer.valPos?.dx||0), y - 7 + (layer.valPos?.dy||0), config.valFontSize, 'normal', false);
+      //svg += generateSVGText(layer.energy.toFixed(1), pos.startX + pos.width/2 + (layer.valPos?.dx||0), y - 12 + (layer.valPos?.dy||0), config.valFontSize, 'normal', false);
+    } else {
+      const yLumo = getCanvasY(layer.lumo);
+      const yHomo = getCanvasY(layer.homo);
+      const height = yHomo - yLumo;
+
+      if (layer.type === 'dashed_box') {
+        svg += `<rect x="${pos.startX}" y="${yLumo}" width="${layer.width}" height="${height}" fill="none" stroke="#000000" stroke-width="1.5" stroke-dasharray="5,5"/>`;
+      } else {
+        svg += `<rect x="${pos.startX}" y="${yLumo}" width="${layer.width}" height="${height}" fill="${layer.color}" stroke="#000000" stroke-width="1.5"/>`;
+      }
+
+      svg += generateSVGText(formattedName, pos.startX + pos.width/1.9 + (layer.labelPos?.dx||0), yLumo + height/2 + (layer.labelPos?.dy||0), config.labelFontSize, 'bold', layer.textVertical);
+      if (layer.homo !== undefined) svg += generateSVGText(layer.homo.toFixed(1), pos.startX + pos.width/2 + (layer.homoPos?.dx||0), yHomo + 20 + (layer.homoPos?.dy||0), config.valFontSize, 'normal', false);
+      //if (layer.homo !== undefined) svg += generateSVGText(layer.homo.toFixed(1), pos.startX + pos.width/2 + (layer.homoPos?.dx||0), yHomo + 15 + (layer.homoPos?.dy||0), config.valFontSize, 'normal', false);
+      if (layer.lumo !== undefined) svg += generateSVGText(layer.lumo.toFixed(1), pos.startX + pos.width/2 + (layer.lumoPos?.dx||0), yLumo - 7 + (layer.lumoPos?.dy||0), config.valFontSize, 'normal', false);
+      //if (layer.lumo !== undefined) svg += generateSVGText(layer.lumo.toFixed(1), pos.startX + pos.width/2 + (layer.lumoPos?.dx||0), yLumo - 12 + (layer.lumoPos?.dy||0), config.valFontSize, 'normal', false);
+    }
+  });
+
+  svg += `</svg>`;
+
+  const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'OLED_Energy_Level.svg';
+  link.click();
+}
+
+function generateSVGText(text, x, y, fontSize, weight, isVertical) {
+  const lines = text.split('\n');
+  const lineHeight = fontSize * 1.2;
+  const totalHeight = lines.length * lineHeight;
+  let res = '';
+
+  if (isVertical) {
+    res += `<g transform="translate(${x}, ${y}) rotate(-90)">`;
+    lines.forEach((line, idx) => {
+      const lineY = - (totalHeight / 2) + (idx + 0.5) * lineHeight;
+      res += `<text x="0" y="${lineY}" font-size="${fontSize}" font-weight="${weight}" text-anchor="middle" dominant-baseline="middle">${line}</text>`;
+    });
+    res += `</g>`;
+  } else {
+    lines.forEach((line, idx) => {
+      const lineY = y - (totalHeight / 2) + (idx + 0.5) * lineHeight;
+      res += `<text x="${x}" y="${lineY}" font-size="${fontSize}" font-weight="${weight}" text-anchor="middle" dominant-baseline="middle">${line}</text>`;
+    });
+  }
+
+  return res;
+}
+
+window.onload = init;
+</script>
+</body>
+</html>
