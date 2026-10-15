@@ -128,7 +128,8 @@
     .toolbar {
       margin-bottom: 15px;
       display: flex;
-      gap: 10px;
+      flex-wrap: wrap;
+      gap: 8px;
     }
     .tip {
       font-size: 12px;
@@ -144,7 +145,7 @@
   
   <div class="toolbar">
     <button class="btn" onclick="exportPNG()">导出 PNG</button>
-    <button class="btn" style="background:#059669;" onclick="exportSVG()">导出 SVG 矢量图</button>
+    <button class="btn" style="background:#059669;" onclick="exportSVG()">导出 SVG</button>
     <button class="btn btn-secondary" onclick="resetPositions()">重置位置</button>
   </div>
 
@@ -165,6 +166,10 @@
     <div class="form-group">
       <label>刻度步长 (eV)</label>
       <input type="number" id="yStep" value="1.0" step="0.1" onchange="draw()">
+    </div>
+    <div class="form-group">
+      <label>能级小数位数</label>
+      <input type="number" id="energyDecimals" value="2" min="0" max="4" onchange="draw()">
     </div>
     <div class="form-group">
       <label>默认层间距 (px)</label>
@@ -194,6 +199,12 @@
 
   <div class="section">
     <h3>材料层管理</h3>
+    <!-- 调整此处按钮：移除 btn-sm，改用和上方工具栏一致的 .btn 样式 -->
+    <div class="toolbar" style="margin-bottom: 10px;">
+      <button class="btn btn-success" onclick="exportLayersJSON()" style="flex:1;">📤 导出层数据</button>
+      <button class="btn" style="background:#8b5cf6; flex:1;" onclick="document.getElementById('importLayersFile').click()">📥 导入层数据</button>
+      <input type="file" id="importLayersFile" style="display: none;" accept=".json" onchange="importLayersJSON(event)">
+    </div>
     <div id="layersList"></div>
     <button class="btn" onclick="addLayer()" style="width: 100%;">+ 在结尾添加材料层</button>
   </div>
@@ -212,6 +223,7 @@ let config = {
   yMax: -1.0,
   yMin: -7.0,
   yStep: 1.0,
+  energyDecimals: 2,
   layerGap: 15,
   axisFontSize: 20,
   labelFontSize: 16,
@@ -246,6 +258,7 @@ let draggedTarget = null;
 let dragStartX = 0, dragStartY = 0;
 
 function init() {
+  document.getElementById('energyDecimals').value = config.energyDecimals !== undefined ? config.energyDecimals : 2;
   draw();
   renderControls();
   setupCanvasInteraction();
@@ -289,6 +302,7 @@ function draw() {
   config.yMax = parseFloat(document.getElementById('yMax').value);
   config.yMin = parseFloat(document.getElementById('yMin').value);
   config.yStep = parseFloat(document.getElementById('yStep').value);
+  config.energyDecimals = parseInt(document.getElementById('energyDecimals').value) || 2;
   config.layerGap = parseFloat(document.getElementById('layerGap').value);
   config.axisFontSize = parseInt(document.getElementById('axisFontSize').value);
   config.labelFontSize = parseInt(document.getElementById('labelFontSize').value);
@@ -372,7 +386,7 @@ function draw() {
       boxHitBoxes.push({ id: layer.id, x: pos.startX, y: y - 10, width: pos.width, height: 20 });
 
       drawDraggableText(`layer_${layer.id}_name`, formattedName, pos.startX + pos.width / 2, y + 20, config.labelFontSize, '#000000', 'bold', layer.labelPos, layer.textVertical);
-      drawDraggableText(`layer_${layer.id}_val`, layer.energy.toFixed(1), pos.startX + pos.width / 2, y - 12, config.valFontSize, '#000000', 'normal', layer.valPos, false);
+      drawDraggableText(`layer_${layer.id}_val`, layer.energy.toFixed(config.energyDecimals), pos.startX + pos.width / 2, y - 12, config.valFontSize, '#000000', 'normal', layer.valPos, false);
 
     } else if (layer.type === 'box' || layer.type === 'dashed_box') {
       const yLumo = getCanvasY(layer.lumo);
@@ -399,10 +413,10 @@ function draw() {
       drawDraggableText(`layer_${layer.id}_name`, formattedName, pos.startX + pos.width / 2, yLumo + height / 2, config.labelFontSize, '#000000', 'bold', layer.labelPos, layer.textVertical);
 
       if (layer.homo !== undefined) {
-        drawDraggableText(`layer_${layer.id}_homo`, layer.homo.toFixed(1), pos.startX + pos.width / 2, yHomo + 15, config.valFontSize, '#000000', 'normal', layer.homoPos, false);
+        drawDraggableText(`layer_${layer.id}_homo`, layer.homo.toFixed(config.energyDecimals), pos.startX + pos.width / 2, yHomo + 15, config.valFontSize, '#000000', 'normal', layer.homoPos, false);
       }
       if (layer.lumo !== undefined) {
-        drawDraggableText(`layer_${layer.id}_lumo`, layer.lumo.toFixed(1), pos.startX + pos.width / 2, yLumo - 12, config.valFontSize, '#000000', 'normal', layer.lumoPos, false);
+        drawDraggableText(`layer_${layer.id}_lumo`, layer.lumo.toFixed(config.energyDecimals), pos.startX + pos.width / 2, yLumo - 12, config.valFontSize, '#000000', 'normal', layer.lumoPos, false);
       }
     }
   });
@@ -554,8 +568,8 @@ function insertLayerAfter(index) {
   const id = Date.now().toString();
   const color = DEFAULT_COLORS[(index + 1) % DEFAULT_COLORS.length];
   const newLayer = {
-    id, type: 'box', name: 'New Layer', thickness: '20', showThickness: true, thicknessPos: 'side', homo: -5.5, lumo: -2.5, width: 50, color, xOffset: 0, textVertical: false,
-    labelPos:{dx:0,dy:0}, homoPos:{dx:0,dy:15}, lumoPos:{dx:0,dy:-12}
+    id, type: 'box', name: 'New Layer', thickness: '20', showThickness: true, thicknessPos: 'side', homo: -5.5, lumo: -2.5, width: 50, color, xOffset: 0, textVertical: true,
+    labelPos:{dx:0,dy:0}, homoPos:{dx:0,dy:2}, lumoPos:{dx:0,dy:-2}
   };
   config.layers.splice(index + 1, 0, newLayer);
   renderControls();
@@ -644,7 +658,6 @@ function setupCanvasInteraction() {
         const dy = mouseY - dragStartY;
         const box = draggedTarget.data;
         
-        // 坐标轴限制水平移动
         if (box.id === 'axis_label') {
           config.axisPos.labelDx += dx;
           document.getElementById('axisLabelDx').value = Math.round(config.axisPos.labelDx);
@@ -674,7 +687,6 @@ function setupCanvasInteraction() {
       let isText = textHitBoxes.some(box => mouseX >= box.x && mouseX <= box.x + box.width && mouseY >= box.y && mouseY <= box.y + box.height);
       let isBox = boxHitBoxes.some(box => mouseX >= box.x && mouseX <= box.x + box.width && mouseY >= box.y && mouseY <= box.y + box.height);
       
-      // 恢复原版光标逻辑：文字显示手型，方框显示左右扩展
       if (isText) canvas.style.cursor = 'pointer';
       else if (isBox) canvas.style.cursor = 'ew-resize';
       else canvas.style.cursor = 'default';
@@ -700,6 +712,43 @@ function syncTextOffsetToConfig(id, offset) {
       if (target === 'lumo') layer.lumoPos = offset;
     }
   }
+}
+
+// 导出层数据为 JSON
+function exportLayersJSON() {
+  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(config.layers, null, 2));
+  const downloadAnchor = document.createElement('a');
+  downloadAnchor.setAttribute("href", dataStr);
+  downloadAnchor.setAttribute("download", "oled_layers_config.json");
+  document.body.appendChild(downloadAnchor);
+  downloadAnchor.click();
+  downloadAnchor.remove();
+}
+
+// 导入层数据从 JSON
+function importLayersJSON(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const importedLayers = JSON.parse(e.target.result);
+      if (Array.isArray(importedLayers)) {
+        config.layers = importedLayers;
+        renderControls();
+        draw();
+        alert("材料层数据加载成功！");
+      } else {
+        alert("文件格式错误：根节点必须是数组格式的 layers 数据。");
+      }
+    } catch (err) {
+      alert("解析 JSON 文件失败，请检查文件格式。");
+      console.error(err);
+    }
+    event.target.value = '';
+  };
+  reader.readAsText(file);
 }
 
 // 导出 PNG
@@ -736,13 +785,13 @@ function exportSVG() {
   svg += `<line x1="${axisX}" y1="${margin.top - 20}" x2="${axisX}" y2="${h - margin.bottom}" stroke="#000000" stroke-width="3"/>`;
   svg += `<polygon points="${axisX},${margin.top - 25} ${axisX - 6},${margin.top - 15} ${axisX + 6},${margin.top - 15}" fill="#000000"/>`;
 
-  // 刻度数字
+  const energyDecimals = parseInt(document.getElementById('energyDecimals').value) || 2;
+
   for (let ev = config.yMax; ev >= config.yMin; ev -= config.yStep) {
     const y = getCanvasY(ev);
     svg += generateSVGText(ev.toFixed(1), axisX - 30 + config.axisPos.ticksDx, y, config.axisFontSize, 'normal', false);
   }
 
-  // Y轴名称
   const labelX = axisX - 76 + config.axisPos.labelDx;
   const labelY = margin.top + graphHeight / 2;
   svg += generateSVGText('Energy Level (eV)', labelX, labelY, config.axisFontSize + 2, 'bold', true);
@@ -755,8 +804,7 @@ function exportSVG() {
       const y = getCanvasY(layer.energy);
       svg += `<line x1="${pos.startX}" y1="${y}" x2="${pos.endX}" y2="${y}" stroke="${layer.color || '#000000'}" stroke-width="3"/>`;
       svg += generateSVGText(formattedName, pos.startX + pos.width/2 + (layer.labelPos?.dx||0), y + 20 + (layer.labelPos?.dy||0), config.labelFontSize, 'bold', layer.textVertical);
-      svg += generateSVGText(layer.energy.toFixed(1), pos.startX + pos.width/2 + (layer.valPos?.dx||0), y - 7 + (layer.valPos?.dy||0), config.valFontSize, 'normal', false);
-      //svg += generateSVGText(layer.energy.toFixed(1), pos.startX + pos.width/2 + (layer.valPos?.dx||0), y - 12 + (layer.valPos?.dy||0), config.valFontSize, 'normal', false);
+      svg += generateSVGText(layer.energy.toFixed(energyDecimals), pos.startX + pos.width/2 + (layer.valPos?.dx||0), y - 12 + (layer.valPos?.dy||0), config.valFontSize, 'normal', false);
     } else {
       const yLumo = getCanvasY(layer.lumo);
       const yHomo = getCanvasY(layer.homo);
@@ -769,10 +817,8 @@ function exportSVG() {
       }
 
       svg += generateSVGText(formattedName, pos.startX + pos.width/1.9 + (layer.labelPos?.dx||0), yLumo + height/2 + (layer.labelPos?.dy||0), config.labelFontSize, 'bold', layer.textVertical);
-      if (layer.homo !== undefined) svg += generateSVGText(layer.homo.toFixed(1), pos.startX + pos.width/2 + (layer.homoPos?.dx||0), yHomo + 20 + (layer.homoPos?.dy||0), config.valFontSize, 'normal', false);
-      //if (layer.homo !== undefined) svg += generateSVGText(layer.homo.toFixed(1), pos.startX + pos.width/2 + (layer.homoPos?.dx||0), yHomo + 15 + (layer.homoPos?.dy||0), config.valFontSize, 'normal', false);
-      if (layer.lumo !== undefined) svg += generateSVGText(layer.lumo.toFixed(1), pos.startX + pos.width/2 + (layer.lumoPos?.dx||0), yLumo - 7 + (layer.lumoPos?.dy||0), config.valFontSize, 'normal', false);
-      //if (layer.lumo !== undefined) svg += generateSVGText(layer.lumo.toFixed(1), pos.startX + pos.width/2 + (layer.lumoPos?.dx||0), yLumo - 12 + (layer.lumoPos?.dy||0), config.valFontSize, 'normal', false);
+      if (layer.homo !== undefined) svg += generateSVGText(layer.homo.toFixed(energyDecimals), pos.startX + pos.width/2 + (layer.homoPos?.dx||0), yHomo + 15 + (layer.homoPos?.dy||0), config.valFontSize, 'normal', false);
+      if (layer.lumo !== undefined) svg += generateSVGText(layer.lumo.toFixed(energyDecimals), pos.startX + pos.width/2 + (layer.lumoPos?.dx||0), yLumo - 12 + (layer.lumoPos?.dy||0), config.valFontSize, 'normal', false);
     }
   });
 
