@@ -165,7 +165,7 @@
     </div>
     <div class="form-group">
       <label>刻度步长 (eV)</label>
-      <input type="number" id="yStep" value="1.0" step="0.1" onchange="draw()">
+      <input type="number" id="yStep" value="1.0" step="0.5" onchange="draw()">
     </div>
     <div class="form-group">
       <label>能级小数位数</label>
@@ -468,7 +468,7 @@ function renderControls() {
 
     let energyFields = '';
     if (layer.type === 'line') {
-      energyFields = `<div class="form-group"><label>能级 (eV)</label><input type="number" step="0.01" value="${layer.energy}" onchange="updateLayer('${layer.id}', 'energy', this.value)"></div>`;
+      energyFields = `<div class="form-group"><label>能级 (eV)</label><input type="number" step="0.1" value="${layer.energy}" onchange="updateLayer('${layer.id}', 'energy', this.value)"></div>`;
     } else {
       energyFields = `
         <div class="form-group"><label>LUMO (eV)</label><input type="number" step="0.1" value="${layer.lumo}" onchange="updateLayer('${layer.id}', 'lumo', this.value)"></div>
